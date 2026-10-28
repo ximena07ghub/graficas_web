@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Command | Reglas</title>
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/pages.css">
+</head>
+<body data-page="reglas">
+    <main class="pagina-sistema pagina-compacta pagina-reglas">
+        <div class="contenedor-sistema">
+            <!-- Logo superior del sistema -->
+            <header class="barra-sistema">
+                <img class="logo-sistema" src="assets/img/logo.png" alt="Fleet Command">
+            </header>
+
+            <!-- Panel de reglas del juego -->
+            <section class="panel-sistema panel-reglas">
+                <button
+                    class="cerrar-panel-sistema"
+                    id="btnCerrarPanelSistema"
+                    type="button"
+                    aria-label="Cerrar reglas"
+                >
+                    ×
+                </button>
+
+                <div class="encabezado-reglas">
+                    <div>
+                        <p class="kicker">ARCHIVO TÁCTICO</p>
+                        <h1>REGLAS</h1>
+                        <p class="descripcion-reglas">Consulta la misión, los turnos y las reglas básicas antes de entrar en combate.</p>
+                <!-- Navegacion por temas -->
+                <div class="reglas-layout">
+                    <nav class="reglas-tabs" aria-label="Secciones de reglas">
+                        <button class="regla-tab activa" data-regla="intro">01 · ¿DE QUÉ TRATA?</button>
+                        <button class="regla-tab" data-regla="ganar">02 · CÓMO SE GANA</button>
+                        <button class="regla-tab" data-regla="modos">03 · MODOS DE JUEGO</button>
+                        <button class="regla-tab" data-regla="dificultad">04 · DIFICULTAD</button>
+                        <button class="regla-tab" data-regla="items">05 · ÍTEMS</button>
+                    </nav>
+
+                    <!-- Contenido activo de reglas -->
+                    <div class="reglas-contenido" aria-live="polite">
+                        <section class="regla-panel activa" data-panel-regla="intro">
+                            <p class="regla-codigo">FLEET COMMAND </p>
+                            <h2>¿De qué trata Fleet Command?</h2>
+                            <p>Fleet Command es un videojuego de estrategia naval por turnos inspirado en el clásico juego de mesa Battleship.</p>
+                            <p>Hay dos cuadrículas: la del jugador y la del oponente. Cada jugador acomoda sus diferentes barcos en su propia cuadrícula y dispara balas de cañón a la cuadrícula enemiga para ubicar y destruir los barcos rivales.</p>
+                            <p>Cada jugador ve sus propios barcos, pero la cuadrícula del enemigo se muestra vacía. Por eso debe disparar, detectar impactos y deducir la posición de la flota contraria hasta hundirla.</p>
+                            <div class="regla-dato-destacado">El juego incluye <strong>3 mapas diferentes</strong>, cada uno con su propia ambientación.</div>
+                        </section>
+
+                        <section class="regla-panel" data-panel-regla="ganar">
+                            <p class="regla-codigo">CONDICIÓN DE VICTORIA</p>
+                            <h2>¿Cómo se gana?</h2>
+                            <div class="regla-lista-compacta">
+                                <p><strong>Clásico:</strong> se obtiene la victoria al hundir todos los barcos enemigos.</p>
+                                <p><strong>Sin límite de tiempo:</strong> la partida no tiene temporizador general.</p>
+                                <p><strong>Fin de turno:</strong> cada turno termina cuando el jugador presiona el botón <em>Finalizar turno</em>.</p>
+                                <p><strong>Ventajas:</strong> existen 3 ítems que pueden apoyar al jugador durante la partida.</p>
+                                <p><strong>Flota:</strong> la cantidad de barcos depende de la dificultad seleccionada.</p>
+                            </div>
+                        </section>
+
+                        <section class="regla-panel" data-panel-regla="modos">
+                            <p class="regla-codigo">TIPOS DE COMBATE</p>
+                            <h2>Modos de juego</h2>
+                            <p class="regla-intro-corta">Se podrá jugar Multijugador en línea o contra la computadora. En ambos casos existirán dos modos:</p>
+
+                            <div class="regla-dos-columnas">
+                                <article class="regla-subtarjeta">
+                                    <span class="regla-numero">01</span>
+                                    <h3>Clásico</h3>
+                                    <p>Cada jugador acomoda sus barcos y después se realiza un disparo por turno. La partida continúa hasta que uno de los jugadores hunde todos los barcos enemigos.</p>
+                                </article>
+
+                                <article class="regla-subtarjeta">
+                                    <span class="regla-numero">02</span>
+                                    <h3>Ráfaga</h3>
+                                    <p>Cada jugador tiene <strong>3 barcos y 10 balas</strong>. Es un solo turno y no se utilizan ítems.</p>
+                                    <p>Cada jugador acomoda sus barcos y selecciona los 10 espacios de la cuadrícula enemiga a los que disparará. Cuando ambos presionan <em>Finalizar turno</em>, el juego compara los impactos.</p>
+                                    <p>Gana quien acierte más disparos. Este es el único modo donde puede existir un <strong>empate</strong>.</p>
+                                </article>
+                            </div>
+                        </section>
+
+                        <section class="regla-panel" data-panel-regla="dificultad">
+                            <p class="regla-codigo">CONFIGURACIÓN DE FLOTA</p>
+                            <h2>Dificultad</h2>
+                            <div class="regla-dos-columnas">
+                                <article class="regla-subtarjeta dificultad-card">
+                                    <span class="regla-numero">NORMAL</span>
+                                    <h3>Cuadrícula 10×10</h3>
+                                    <p><strong>5 barcos</strong> de 4 tamaños diferentes:</p>
+                                    <ul>
+                                        <li>1 barco de 5 cuadros</li>
+                                        <li>1 barco de 4 cuadros</li>
+                                        <li>2 barcos de 3 cuadros</li>
+                                        <li>1 barco de 2 cuadros</li>
+                                    </ul>
+                                </article>
+
+                                <article class="regla-subtarjeta dificultad-card">
+                                    <span class="regla-numero">DIFÍCIL</span>
+                                    <h3>Cuadrícula 12×12</h3>
+                                    <p><strong>3 barcos:</strong></p>
+                                    <ul>
+                                        <li>2 barcos de 2 cuadros</li>
+                                        <li>1 barco de 3 cuadros</li>
+                                    </ul>
+                                    <p>La dificultad aumenta porque el terreno es más grande y hay menos barcos, además de ser de menor tamaño.</p>
+                                </article>
+                            </div>
+                        </section>
+
+                        <section class="regla-panel" data-panel-regla="items">
+                            <p class="regla-codigo">VENTAJAS TÁCTICAS</p>
+                            <h2>Ítems</h2>
+                            <p class="regla-intro-corta">Solo se puede usar <strong>un ítem por turno</strong>. Todos se recargan cada 2 turnos después de usarse. El Sonar tiene 2 usos; Doble disparo y Escudo tienen 3 usos por partida.</p>
+
+                            <div class="items-grid">
+                                <article class="regla-subtarjeta item-card">
+                                    <span class="regla-numero">01</span>
+                                    <h3>Sonar</h3>
+                                    <p>Detecta en un radio de <strong>3×3</strong> si existe un barco. Si no lo hay, no aparece nada. Si existe, solo marca una casilla del barco.</p>
+                                    <p>El jugador sabe que acertará en esa casilla, pero no conoce el largo ni la orientación del barco.</p>
+                                </article>
+
+                                <article class="regla-subtarjeta item-card">
+                                    <span class="regla-numero">02</span>
+                                    <h3>Doble disparo</h3>
+                                    <p>Permite disparar dos balas en el mismo turno y elegir las dos coordenadas, juntas o separadas.</p>
+                                    <p>Debe activarse <strong>antes de realizar el primer disparo</strong>. No es válido disparar primero y activar el ítem después.</p>
+                                </article>
+
+                                <article class="regla-subtarjeta item-card">
+                                    <span class="regla-numero">03</span>
+                                    <h3>Escudo</h3>
+                                    <p>Se coloca sobre un barco completo y protege durante el siguiente turno enemigo.</p>
+                                    <p>Si el enemigo golpea ese barco, no causa daño y se muestra que acertó al escudo. Si falla o golpea otro barco, no ocurre nada. El escudo se desactiva al iniciar el turno siguiente.</p>
+                                </article>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Logica compartida y reglas -->
+    <script src="js/common.js"></script>
+    <script src="js/reglas.js"></script>
+</body>
+</html>

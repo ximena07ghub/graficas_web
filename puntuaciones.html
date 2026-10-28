@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Command | Puntuaciones</title>
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/pages.css">
+    <link rel="stylesheet" href="css/puntuaciones.css">
+</head>
+<body data-page="puntuaciones">
+    <main class="pagina-sistema">
+        <div class="contenedor-sistema">
+            <header class="barra-sistema">
+                <img class="logo-sistema" src="assets/img/logo.png" alt="Fleet Command">
+            </header>
+
+            <section class="panel-sistema panel-puntuaciones">
+                <button class="cerrar-panel-sistema" id="btnCerrarPuntuaciones" type="button" aria-label="Cerrar puntuaciones">×</button>
+                <p class="kicker">PANEL DE CLASIFICACION</p>
+                <h1>CLASIFICACIÓN</h1>
+                <p class="intro">Los récords de  tabla apareceran cuando haya partidas ganadas c:</p>
+
+                <div class="estado-api" id="estadoApi">Comprobando conexion...</div>
+
+                <div class="tabla-puntuaciones-wrap">
+                    <table class="tabla-puntuaciones">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Jugador</th>
+                                <th>Puntos</th>
+                                <th>Partidas</th>
+                                <th>Victorias</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoPuntuaciones">
+                            <tr><td colspan="5">Sin datos todavía.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="acciones-puntuaciones">
+                    <button class="hud-btn" id="btnReintentarPuntuaciones" type="button">ACTUALIZAR PUNTUACIONES</button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="js/common.js"></script>
+    <script src="js/webservice.js"></script>
+    <script src="js/puntuaciones.js"></script>
+</body>
+</html>

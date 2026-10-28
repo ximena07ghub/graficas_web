@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Command</title>
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/index.css">
+</head>
+<body data-page="index">
+
+    <main class="pantalla-inicio">
+        <!-- Capas visuales del fondo -->
+        <div class="capa-ambiente"></div>
+        <div class="barrido-luz"></div>
+        <div class="ruido-hud"></div>
+
+        <!-- Marco principal del menu -->
+        <section class="marco-principal" aria-label="Menú principal de Fleet Command">
+            <div class="marco-imagen" aria-hidden="true"></div>
+
+            <!-- Logo del juego -->
+            <header class="cabecera-menu">
+                <img src="assets/img/logo.png" alt="Fleet Command" class="logo">
+            </header>
+
+            <div class="contenido-menu">
+                <!-- Opciones principales -->
+                <nav class="menu-principal" aria-label="Opciones principales">
+                    <button class="opcion-menu seleccionada" data-accion="nave" data-titulo="BIENVENIDO" data-descripcion="Identifícate para entrar al puente de mando y usar tu nombre de jugador durante la sesión.">
+                        <span class="numero">01</span>
+                        <span class="texto-opcion">INICIAR</span>
+                        <span class="icono-opcion">▶</span>
+                    </button>
+
+                    <button class="opcion-menu" data-accion="puntuaciones" data-titulo="PUNTUACIONES" data-descripcion="Consulta la clasificación registrada por el Web Service y MySQL.">
+                        <span class="numero">02</span>
+                        <span class="texto-opcion">PUNTUACIONES</span>
+                    </button>
+
+                    <button class="opcion-menu" data-accion="reglas" data-titulo="REGLAS" data-descripcion="Consulta la misión, los turnos y las reglas básicas antes de entrar en combate.">
+                        <span class="numero">03</span>
+                        <span class="texto-opcion">REGLAS</span>
+                    </button>
+
+                    <button class="opcion-menu" data-accion="ajustes" data-titulo="AJUSTES" data-descripcion="Configura música, efectos, volumen y pantalla completa desde una sola sección.">
+                        <span class="numero">04</span>
+                        <span class="texto-opcion">AJUSTES</span>
+                    </button>
+
+                    <button class="opcion-menu opcion-salir" data-accion="salir" data-titulo="SALIR" data-descripcion="Desconecta la interfaz de Fleet Command. Permite cerrar la pestaña de forma segura.">
+                        <span class="numero">05</span>
+                        <span class="texto-opcion">SALIR</span>
+                        <span class="icono-opcion">↪</span>
+                    </button>
+                </nav>
+
+                <!-- Panel informativo dinamico -->
+                <section class="panel-bienvenida" aria-live="polite">
+                    <div class="etiqueta-sistema">FLEET COMMAND</div>
+                    <h1 id="tituloPanel">BIENVENIDO</h1>
+                    <p id="descripcionPanel">
+                        Accede al puente de mando y configura el tipo de partida, mapa y dificultad.
+                    </p>
+
+                    <div class="estado-panel" id="estadoSesion">
+                        <span id="textoSesion">SIN SESIÓN</span>
+                        <span id="estadoAudioPie">AUDIO // CONFIGURADO</span>
+                    </div>
+
+                    <button class="boton-principal" id="btnAccionPrincipal">
+                        <span class="texto-accion" id="textoAccionPrincipal">ENTRAR</span>
+                        <span>➜</span>
+                    </button>
+                </section>
+            </div>
+
+            <footer class="pie-menu">
+                <span>FLEET COMMAND </span>
+                <span></span>
+            </footer>
+        </section>
+    </main>
+
+    <!-- Modal de inicio de sesion -->
+    <div class="modal-overlay" id="modalLogin" role="dialog" aria-modal="true" aria-labelledby="tituloLogin">
+        <section class="modal-hud">
+            <h2 class="modal-titulo" id="tituloLogin">INICIAR SESIÓN</h2>
+ 
+
+            <form id="formLogin">
+                <div class="campo">
+                    <label for="usuario">Usuario</label>
+                    <input id="usuario" name="usuario" type="text" autocomplete="username" maxlength="20" placeholder="Ej. Capitan01" required>
+                </div>
+
+                <div class="campo">
+                    <label for="password">Contraseña</label>
+                    <input id="password" name="password" type="password" autocomplete="current-password" maxlength="32" placeholder="Mínimo 4 caracteres" required>
+                </div>
+
+                <p class="mensaje-error" id="errorLogin"></p>
+
+                <div class="modal-acciones">
+                    <button class="hud-btn" type="button" data-cerrar-modal="modalLogin">CANCELAR</button>
+                    <button class="hud-btn" type="submit">ENTRAR</button>
+                </div>
+                
+            </form>
+            <div style="margin-top: 18px; text-align: center;">
+
+                <p style="margin-bottom: 10px;">
+                    O INICIA CON FACEBOOK
+                </p>
+            
+                <fb:login-button
+                    scope="public_profile,email"
+                    onlogin="checkLoginState();">
+                </fb:login-button>
+            
+            </div>
+        </section>
+    </div>
+
+    <!-- Confirmacion para salir -->
+    <div class="modal-overlay" id="modalSalir" role="dialog" aria-modal="true" aria-labelledby="tituloSalir">
+        <section class="modal-hud">
+            <h2 class="modal-titulo" id="tituloSalir">DESCONECTAR SISTEMA</h2>
+            <p class="modal-texto">
+                ¿Deseas salir de Fleet Command? 
+            </p>
+            <div class="modal-acciones">
+                <button class="hud-btn" type="button" data-cerrar-modal="modalSalir">CANCELAR</button>
+                <button class="hud-btn peligro" type="button" id="confirmarSalir">SALIR</button>
+            </div>
+        </section>
+    </div>
+
+    <!-- Pantalla si no cierra pestaña -->
+    <div class="pantalla-desconexion" id="pantallaDesconexion" aria-hidden="true">
+        <img src="assets/img/logo.png" alt="Fleet Command">
+        <h2>SISTEMA DESCONECTADO</h2>
+        <p>Puedes cerrar esta pestaña de forma segura.</p>
+        <button class="hud-btn" id="volverSistema">VOLVER AL SISTEMA</button>
+    </div>
+
+    <!-- Logica compartida, Facebook y menu -->
+    <script src="js/common.js"></script>
+    <script src="js/facebook.js"></script>
+    <script src="js/index.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Command | Ajustes</title>
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/pages.css">
+</head>
+<body data-page="ajustes">
+    <main class="pagina-sistema pagina-compacta pagina-ajustes">
+        <div class="contenedor-sistema">
+            <!-- Logo superior del sistema -->
+            <header class="barra-sistema">
+                <img class="logo-sistema" src="assets/img/logo.png" alt="Fleet Command">
+            </header>
+
+            <!-- Panel de configuracion -->
+            <section class="panel-sistema panel-ajustes-compacto">
+
+                    <button
+                        class="cerrar-panel-sistema"
+                        id="btnCerrarPanelSistema"
+                        type="button"
+                        aria-label="Cerrar ajustes"
+                    >
+                        ×
+                    </button>
+
+                <div class="encabezado-ajustes">
+                    <div>
+                        <p class="kicker">CONFIGURACIÓN </p>
+                        <h1>AJUSTES</h1>
+                    </div>
+                   
+                </div>
+
+                <!-- Controles de audio -->
+                <div class="ajustes-grid-compacto">
+                    <article class="ajuste-card">
+                        <div>
+                            <h2>Música</h2>
+                            <p>Activa o desactiva el sonido de fondo.</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="musicaActiva">
+                            <span class="slider-switch"></span>
+                        </label>
+                    </article>
+
+                    <article class="ajuste-card">
+                        <div>
+                            <h2>Efectos</h2>
+                            <p>Reproduce sonido al hacer clic.</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="efectosActivos">
+                            <span class="slider-switch"></span>
+                        </label>
+                    </article>
+
+                    <article class="ajuste-card ajuste-card-rango">
+                        <div>
+                            <h2>Volumen de música</h2>
+                        </div>
+                        <div class="control-rango">
+                            <input id="volumenMusica" type="range" min="0" max="100" step="1">
+                            <span id="valorMusica">32%</span>
+                        </div>
+                    </article>
+
+                    <article class="ajuste-card ajuste-card-rango">
+                        <div>
+                            <h2>Volumen de efectos</h2>
+                            <p>Controla la intensidad del sonido.</p>
+                        </div>
+                        <div class="control-rango">
+                            <input id="volumenEfectos" type="range" min="0" max="100" step="1">
+                            <span id="valorEfectos">55%</span>
+                        </div>
+                    </article>
+
+                
+                </div>
+
+                <!-- Acciones de sesion -->
+                <div class="acciones-ajustes acciones-ajustes-compactas">
+                    <button class="hud-btn peligro" id="btnCerrarSesion">CERRAR SESIÓN</button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Logica compartida y ajustes -->
+    <script src="js/common.js"></script>
+    <script src="js/ajustes.js"></script>
+</body>
+</html>

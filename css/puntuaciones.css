@@ -1,0 +1,61 @@
+.panel-puntuaciones {
+    max-width: 980px;
+}
+
+.estado-api {
+    margin: 22px 0 15px;
+    padding: 11px 14px;
+    border-left: 2px solid rgba(0, 247, 234, .62);
+    background: rgba(0, 12, 24, .56);
+    color: #a9c6cc;
+}
+
+.estado-api.ok {
+    border-left-color: #69ffd7;
+    color: #aaffdf;
+}
+
+.estado-api.error {
+    border-left-color: #ff9a61;
+    color: #ffd0b5;
+}
+
+.tabla-puntuaciones-wrap {
+    overflow-x: auto;
+    border: 1px solid rgba(0, 247, 234, .18);
+    background: rgba(0, 7, 16, .6);
+}
+
+.tabla-puntuaciones {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 640px;
+}
+
+.tabla-puntuaciones th,
+.tabla-puntuaciones td {
+    padding: 13px 14px;
+    border-bottom: 1px solid rgba(0, 247, 234, .12);
+    text-align: left;
+}
+
+.tabla-puntuaciones th {
+    color: #5afff2;
+    font-size: .75rem;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+}
+
+.tabla-puntuaciones td {
+    color: #dceff2;
+}
+
+.tabla-puntuaciones tr:last-child td {
+    border-bottom: 0;
+}
+
+.acciones-puntuaciones {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 18px;
+}

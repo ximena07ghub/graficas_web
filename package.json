@@ -1,0 +1,21 @@
+{
+  "name": "fleet-command",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Segundo avance de Fleet Command con Three.js, Express y Socket.IO.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "three": "0.155.0"
+  }
+}

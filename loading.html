@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Fleet Command | Cargando</title>
+
+    <link
+        rel="stylesheet"
+        href="css/loading.css"
+    >
+
+</head>
+
+
+<body data-page="loading">
+
+
+    <main class="pantalla-loading">
+
+
+        <!-- Fondo de carga -->
+
+        <div class="fondo-loading"></div>
+
+
+
+        <!-- Marco tecnologico -->
+
+        <div class="marco-hud">
+
+
+            <span class="linea-superior"></span>
+
+            <span class="linea-inferior"></span>
+
+
+            <span class="esquina superior-izquierda"></span>
+
+            <span class="esquina superior-derecha"></span>
+
+            <span class="esquina inferior-izquierda"></span>
+
+            <span class="esquina inferior-derecha"></span>
+
+
+        </div>
+
+
+
+        <!-- Logo flotante -->
+
+        <img
+            src="assets/img/logo.png"
+            alt="Fleet Command"
+            class="logo-loading"
+        >
+
+
+
+        <!-- Centro de progreso -->
+
+        <section class="centro-loading">
+
+
+            <h1 id="tituloCarga">
+                CARGANDO
+                <span id="puntosCarga">
+                    ...
+                </span>
+            </h1>
+
+
+            <div class="barra-contenedor">
+
+                <div
+                    class="barra-progreso"
+                    id="barraProgreso"
+                ></div>
+
+            </div>
+
+
+            <div class="datos-carga">
+
+                <span id="mensajeCarga">
+                    Inicializando sistema...
+                </span>
+
+                <span id="porcentajeCarga">
+                    0%
+                </span>
+
+            </div>
+
+
+        </section>
+
+
+
+        <!-- Estado inferior -->
+
+        <div class="estado-loading">
+
+            <span class="estado-punto"></span>
+
+            <span>
+                FLEET COMMAND SYSTEM
+            </span>
+
+        </div>
+
+
+    </main>
+
+
+    <!-- Logica de carga -->
+    <script src="js/loading.js"></script>
+
+</body>
+
+</html>

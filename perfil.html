@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Command | Perfil</title>
+    <link rel="stylesheet" href="css/common.css">
+    <link rel="stylesheet" href="css/pages.css">
+</head>
+<body data-page="perfil">
+    <main class="pagina-sistema">
+        <div class="contenedor-sistema">
+            <!-- Logo superior del sistema -->
+            <header class="barra-sistema">
+                <img class="logo-sistema" src="assets/img/logo.png" alt="Fleet Command">
+            </header>
+
+            <!-- Panel del perfil de sesión -->
+            <section class="panel-sistema">
+
+            <button
+                class="cerrar-panel-sistema"
+                id="btnCerrarPanelSistema"
+                type="button"
+                aria-label="Cerrar perfil"
+            >
+                ×
+            </button>
+
+                <!-- Identidad del jugador -->
+                <p class="kicker">EXPEDIENTE // COMANDANTE</p>
+                <div class="perfil-encabezado">
+                    <div class="avatar-perfil"></div>
+                    <div>
+                        <h1 id="nombrePerfil">JUGADOR</h1>
+                        <p class="intro">Resumen de partidas</p>
+                    </div>
+                </div>
+
+                <!-- Estadisticas acumuladas -->
+                <div class="estadisticas">
+                    <article><span id="partidasPerfil">—</span><small>PARTIDAS</small></article>
+                    <article><span id="victoriasPerfil">—</span><small>VICTORIAS</small></article>
+                    <article><span id="derrotasPerfil">—</span><small>DERROTAS</small></article>
+                    <article><span id="efectividadPerfil">—</span><small>EFECTIVIDAD</small></article>
+                </div>
+
+                <!-- Resumen de partidas -->
+                <section class="historial-panel">
+                    <div class="historial-titulo">
+                        <h2>HISTORIAL DE COMBATE</h2>
+                        
+                    </div>
+                    <div id="listaHistorial" class="lista-historial"></div>
+                </section>
+            </section>
+        </div>
+    </main>
+
+    <!-- Logica compartida y perfil -->
+    <script src="js/common.js"></script>
+    <script src="js/webservice.js"></script>
+    <script src="js/perfil.js"></script>
+</body>
+</html>

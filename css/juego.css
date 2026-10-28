@@ -1,0 +1,194 @@
+html,
+body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+body[data-page="juego"] {
+    background: #010712;
+}
+
+.pantalla-juego,
+.contenedor-three {
+    position: fixed;
+    inset: 0;
+}
+
+.contenedor-three canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.pantalla-juego::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(180deg, rgba(0, 8, 20, .34), transparent 23%, transparent 72%, rgba(0, 8, 20, .58)),
+        radial-gradient(circle at center, transparent 45%, rgba(0, 5, 12, .25));
+}
+
+.hud-superior,
+.hud-inferior {
+    position: fixed;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.hud-superior { top: 0; }
+.hud-inferior { bottom: 0; }
+
+.hud-panel {
+    pointer-events: auto;
+    padding: 12px 15px;
+    border: 1px solid rgba(0, 247, 234, .28);
+    border-radius: 4px 13px 4px 13px;
+    background: linear-gradient(145deg, rgba(2, 20, 33, .86), rgba(1, 11, 23, .78));
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .28), inset 0 0 20px rgba(0, 247, 234, .035);
+    backdrop-filter: blur(9px);
+}
+
+.hud-identidad { max-width: min(600px, 68vw); }
+.hud-red { min-width: 245px; }
+
+.hud-kicker,
+.etiqueta-fleet {
+    color: #5afff2;
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+}
+
+.hud-titulo,
+.modal-fleet .modal-title {
+    color: #efffff;
+    font-weight: 800;
+    letter-spacing: .08em;
+}
+
+.hud-titulo { font-size: clamp(1rem, 2.3vw, 1.55rem); }
+.hud-linea,
+.text-hud-suave { color: #9bb8c0; }
+
+.badge-fleet,
+.control-chip {
+    display: inline-block;
+    padding: 5px 8px;
+    border: 1px solid rgba(0, 247, 234, .24);
+    border-radius: 3px;
+    background: rgba(0, 12, 25, .66);
+    color: #bffdf8;
+    font-size: .7rem;
+    letter-spacing: .08em;
+}
+
+.control-chip { margin: 2px 0 2px 4px; }
+.badge-fleet.ok { border-color: rgba(105, 255, 215, .65); color: #9affdf; }
+.badge-fleet.alerta { border-color: rgba(244, 170, 0, .72); color: #ffd76e; }
+
+.btn-fleet {
+    min-height: 40px;
+    padding: 8px 15px;
+    border: 1px solid rgba(0, 247, 234, .48);
+    border-radius: 4px 10px 4px 10px;
+    background: linear-gradient(90deg, rgba(5, 50, 62, .92), rgba(2, 24, 38, .94));
+    color: #efffff;
+    font-weight: 700;
+    letter-spacing: .08em;
+    transition: .18s ease;
+}
+
+.btn-fleet:hover,
+.btn-fleet:focus-visible {
+    border-color: #5afff2;
+    color: #fff;
+    box-shadow: 0 0 18px rgba(0, 247, 234, .18);
+    transform: translateY(-1px);
+}
+
+.btn-fleet-grande { min-height: 52px; }
+.btn-fleet-peligro { border-color: rgba(255, 95, 104, .48); color: #ffd8db; }
+
+.modal-fleet .modal-content {
+    border: 1px solid rgba(0, 247, 234, .46);
+    border-radius: 4px 18px 4px 18px;
+    background: linear-gradient(145deg, rgba(3, 28, 40, .99), rgba(1, 11, 23, .99));
+    color: #efffff;
+    box-shadow: 0 25px 90px rgba(0, 0, 0, .62);
+}
+
+.modal-fleet .modal-header { padding-bottom: 8px; }
+
+.input-fleet {
+    border: 1px solid rgba(0, 247, 234, .3);
+    background: rgba(0, 8, 18, .94);
+    color: #fff;
+    letter-spacing: .18em;
+    font-weight: 700;
+}
+
+.input-fleet:focus {
+    border-color: #00f7ea;
+    background: rgba(0, 8, 18, .98);
+    color: #fff;
+    box-shadow: 0 0 0 .18rem rgba(0, 247, 234, .08);
+}
+
+.input-fleet::placeholder { color: #57727c; }
+
+.separador-modal {
+    position: relative;
+    margin: 20px 0;
+    text-align: center;
+    color: #708c96;
+    font-size: .72rem;
+    letter-spacing: .16em;
+}
+
+.separador-modal::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: rgba(0, 247, 234, .15);
+}
+
+.separador-modal span {
+    position: relative;
+    padding: 0 10px;
+    background: #031725;
+}
+
+.estado-lobby {
+    min-height: 56px;
+    padding: 10px 12px;
+    border-left: 2px solid rgba(0, 247, 234, .55);
+    background: rgba(0, 9, 18, .62);
+    color: #abc6cc;
+    font-size: .88rem;
+}
+
+@media (max-width: 720px) {
+    .hud-identidad { max-width: 62vw; }
+    .hud-red { min-width: 0; }
+    .hud-kicker { display: none; }
+    .hud-panel { padding: 9px 10px; }
+    .hud-linea { font-size: .72rem; }
+    .badge-fleet { font-size: .58rem; }
+    .control-chip { font-size: .58rem; }
+}
+
+.resultado-puntos {
+    color: #69ffd7;
+    font-size: clamp(1.4rem, 4vw, 2.2rem);
+    font-weight: 800;
+    letter-spacing: .08em;
+}
