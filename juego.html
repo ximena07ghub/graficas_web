@@ -1,13 +1,31 @@
+
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
     <title>Fleet Command | Partida</title>
 
-    <link rel="stylesheet" href="assets/vendor/bootstrap/bootstrap.min.css">
-    <link rel="stylesheet" href="css/common.css">
-    <link rel="stylesheet" href="css/juego.css">
+    <link
+        rel="stylesheet"
+        href="assets/vendor/bootstrap/bootstrap.min.css"
+    >
+
+    <link
+        rel="stylesheet"
+        href="css/common.css"
+    >
+
+    <link
+        rel="stylesheet"
+        href="css/juego.css"
+    >
 
     <script type="importmap">
     {
@@ -18,121 +36,392 @@
     }
     </script>
 </head>
-<body data-page="juego">
-    <main class="pantalla-juego">
-        <div id="contenedorThree" class="contenedor-three" aria-label="Escena 3D de Fleet Command"></div>
 
-        <header class="hud-superior container-fluid px-3 px-md-4 pt-3">
-            <div class="d-flex justify-content-between align-items-start gap-3">
+<body data-page="juego">
+
+    <main class="pantalla-juego">
+
+        <div
+            id="contenedorThree"
+            class="contenedor-three"
+            aria-label="Escena 3D de Fleet Command"
+        ></div>
+
+        <header
+            class="hud-superior container-fluid px-3 px-md-4 pt-3"
+        >
+            <div
+                class="d-flex justify-content-between align-items-start gap-3"
+            >
                 <section class="hud-panel hud-identidad">
-                    <p class="hud-kicker mb-1">FLEET COMMAND</p>
-                    <h1 class="hud-titulo mb-1">PUENTE DE COMBATE</h1>
-                    <p class="hud-linea mb-0" id="hudConfiguracion">Cargando configuración...</p>
+
+                    <p class="hud-kicker mb-1">
+                        FLEET COMMAND
+                    </p>
+
+                    <h1 class="hud-titulo mb-1">
+                        PUENTE DE COMBATE
+                    </h1>
+
+                    <p
+                        class="hud-linea mb-0"
+                        id="hudConfiguracion"
+                    >
+                        Cargando configuración...
+                    </p>
+
                 </section>
 
                 <section class="hud-panel hud-red text-end">
-                    <div class="d-flex justify-content-end align-items-center flex-wrap gap-2 mb-2">
-                        <span class="badge-fleet" id="estadoConexion">CONECTANDO</span>
-                        <span class="badge-fleet" id="estadoSala">SALA -- / 0/2</span>
+
+                    <div
+                        class="d-flex justify-content-end align-items-center flex-wrap gap-2 mb-2"
+                    >
+                        <span
+                            class="badge-fleet"
+                            id="estadoConexion"
+                        >
+                            CONECTANDO
+                        </span>
+
+                        <span
+                            class="badge-fleet"
+                            id="estadoSala"
+                        >
+                            SALA -- / 0/2
+                        </span>
                     </div>
-                    <div class="d-flex justify-content-end gap-2">
-                        <button type="button" class="btn-fleet" id="btnSala">SALA</button>
-                        <button type="button" class="btn-fleet" id="btnPausa">PAUSA</button>
+
+                    <div
+                        class="d-flex justify-content-end flex-wrap gap-2"
+                    >
+                        <button
+                            type="button"
+                            class="btn-fleet"
+                            id="btnSala"
+                        >
+                            SALA
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn-fleet"
+                            id="btnFlotaLista"
+                            hidden
+                        >
+                            CONFIRMAR FLOTA
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn-fleet"
+                            id="btnPausa"
+                        >
+                            PAUSA
+                        </button>
                     </div>
+
                 </section>
             </div>
         </header>
 
-        <section class="hud-inferior container-fluid px-3 px-md-4 pb-3">
+        <section
+            class="hud-inferior container-fluid px-3 px-md-4 pb-3"
+        >
             <div class="row g-2 align-items-end">
+
                 <div class="col-12 col-md-7">
+
                     <div class="hud-panel hud-controles">
-                        <p class="mb-1"><strong id="estadoJugador">Esperando asignación...</strong></p>
-                        <p class="mb-0 text-hud-suave" id="mensajeJuego">
-                            Selecciona o deselecciona un barco con clic y muévelo dentro de tu mitad del tablero.
+
+                        <p class="mb-1">
+                            <strong id="estadoJugador">
+                                Esperando asignación...
+                            </strong>
                         </p>
+
+                        <p
+                            class="mb-0 text-hud-suave"
+                            id="mensajeJuego"
+                        >
+                            Coloca tus barcos y confirma
+                            la flota. Después selecciona
+                            casillas del campo rival.
+                        </p>
+
                     </div>
                 </div>
+
                 <div class="col-12 col-md-5">
+
                     <div class="hud-panel text-md-end">
-                        <span class="control-chip">MOVER -> AWSD / TECLADO </span>
-                        <span class="control-chip"> SEL/DESEL -> CLICK</span>
-                        <span class="control-chip">CAMARA -> ARRASTRE MOUSE</span>
-                        <span class="control-chip">ZOOM -< RUEDA MOUSE</span>
+
+                        <span class="control-chip">
+                            MOVER: WASD / FLECHAS
+                        </span>
+
+                        <span class="control-chip">
+                            SELECCIONAR: CLIC
+                        </span>
+
+                        <span class="control-chip">
+                            CÁMARA: ARRASTRAR
+                        </span>
+
+                        <span class="control-chip">
+                            ZOOM: RUEDA DEL MOUSE
+                        </span>
+
                     </div>
                 </div>
+
             </div>
         </section>
+
     </main>
 
-    <div class="modal fade modal-fleet" id="modalSala" tabindex="-1" aria-labelledby="tituloSala" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <!-- Modal para crear o unirse a una sala -->
+    <div
+        class="modal fade modal-fleet"
+        id="modalSala"
+        tabindex="-1"
+        aria-labelledby="tituloSala"
+        aria-hidden="true"
+        data-bs-backdrop="static"
+        data-bs-keyboard="false"
+    >
         <div class="modal-dialog modal-dialog-centered">
+
             <div class="modal-content">
+
                 <div class="modal-header border-0">
-                    <h2 class="modal-title" id="tituloSala">SALA MULTIJUGADOR</h2>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar" id="btnCerrarSala"></button>
+
+                    <h2
+                        class="modal-title"
+                        id="tituloSala"
+                    >
+                        SALA MULTIJUGADOR
+                    </h2>
+
+                    <button
+                        type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal"
+                        aria-label="Cerrar"
+                    ></button>
+
                 </div>
+
                 <div class="modal-body pt-0">
+
                     <div class="d-grid gap-2 mb-4">
-                        <button type="button" class="btn-fleet btn-fleet-grande" id="btnCrearSala">CREAR SALA</button>
+
+                        <button
+                            type="button"
+                            class="btn-fleet btn-fleet-grande"
+                            id="btnCrearSala"
+                        >
+                            CREAR SALA
+                        </button>
+
                     </div>
 
-                    <div class="separador-modal"><span>O</span></div>
+                    <div class="separador-modal">
+                        <span>O</span>
+                    </div>
 
-                    <label class="form-label etiqueta-fleet" for="codigoSala">CÓDIGO DE SALA</label>
+                    <label
+                        class="form-label etiqueta-fleet"
+                        for="codigoSala"
+                    >
+                        CÓDIGO DE SALA
+                    </label>
+
                     <div class="input-group">
-                        <input class="form-control input-fleet text-uppercase" id="codigoSala" maxlength="8" autocomplete="off" placeholder="ABCDE">
-                        <button class="btn-fleet" type="button" id="btnUnirseSala">UNIRSE</button>
+
+                        <input
+                            class="form-control input-fleet text-uppercase"
+                            id="codigoSala"
+                            maxlength="8"
+                            autocomplete="off"
+                            placeholder="ABCDE"
+                        >
+
+                        <button
+                            class="btn-fleet"
+                            type="button"
+                            id="btnUnirseSala"
+                        >
+                            UNIRSE
+                        </button>
+
                     </div>
 
-                    <div class="estado-lobby mt-4" id="estadoLobby">Crea una sala o escribe un código existente.</div>
+                    <div
+                        class="estado-lobby mt-4"
+                        id="estadoLobby"
+                    >
+                        Crea una sala o escribe un código
+                        existente.
+                    </div>
+
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="modal fade modal-fleet" id="modalPausa" tabindex="-1" aria-labelledby="tituloPausa" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <!-- Modal de pausa -->
+    <div
+        class="modal fade modal-fleet"
+        id="modalPausa"
+        tabindex="-1"
+        aria-labelledby="tituloPausa"
+        aria-hidden="true"
+        data-bs-backdrop="static"
+        data-bs-keyboard="false"
+    >
         <div class="modal-dialog modal-dialog-centered">
+
             <div class="modal-content text-center">
+
                 <div class="modal-body p-4 p-md-5">
-                    <p class="hud-kicker mb-2">SISTEMA EN ESPERA</p>
-                    <h2 class="modal-title mb-3" id="tituloPausa">PAUSA</h2>
-                    <p class="text-hud-suave mb-4">Conexion activa esperando </p>
+
+                    <p class="hud-kicker mb-2">
+                        SISTEMA EN ESPERA
+                    </p>
+
+                    <h2
+                        class="modal-title mb-3"
+                        id="tituloPausa"
+                    >
+                        PAUSA
+                    </h2>
+
+                    <p class="text-hud-suave mb-4">
+                        Control pausado.
+                    </p>
 
                     <div class="d-grid gap-2">
-                        <button type="button" class="btn-fleet btn-fleet-grande" id="btnContinuar">CONTINUAR</button>
-                        <button type="button" class="btn-fleet" id="btnPantallaCompleta">PANTALLA COMPLETA</button>
-                        <button type="button" class="btn-fleet btn-fleet-peligro" id="btnVolverDashboard">VOLVER AL DASHBOARD</button>
+
+                        <button
+                            type="button"
+                            class="btn-fleet btn-fleet-grande"
+                            id="btnContinuar"
+                        >
+                            CONTINUAR
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn-fleet"
+                            id="btnPantallaCompleta"
+                        >
+                            PANTALLA COMPLETA
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn-fleet btn-fleet-peligro"
+                            id="btnVolverDashboard"
+                        >
+                            VOLVER AL DASHBOARD
+                        </button>
+
                     </div>
+
                 </div>
             </div>
         </div>
     </div>
 
-
-    <div class="modal fade modal-fleet" id="modalResultado" tabindex="-1" aria-labelledby="textoResultado" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <!-- Modal de resultados -->
+    <div
+        class="modal fade modal-fleet"
+        id="modalResultado"
+        tabindex="-1"
+        aria-labelledby="textoResultado"
+        aria-hidden="true"
+        data-bs-backdrop="static"
+        data-bs-keyboard="false"
+    >
         <div class="modal-dialog modal-dialog-centered">
+
             <div class="modal-content text-center">
+
                 <div class="modal-body p-4 p-md-5">
-                    <p class="hud-kicker mb-2">RESULTADO DE COMBATE</p>
-                    <h2 class="modal-title mb-2" id="textoResultado">VICTORIA</h2>
-                    <p class="resultado-puntos mb-3" id="puntosResultado">0 PUNTOS</p>
-                    <p class="text-hud-suave mb-4" id="estadoGuardadoResultado">Preparando registro...</p>
+
+                    <p class="hud-kicker mb-2">
+                        RESULTADO DE COMBATE
+                    </p>
+
+                    <h2
+                        class="modal-title mb-2"
+                        id="textoResultado"
+                    >
+                        RESULTADO
+                    </h2>
+
+                    <p
+                        class="resultado-puntos mb-3"
+                        id="puntosResultado"
+                    >
+                        0 PUNTOS
+                    </p>
+
+                    <p
+                        class="text-hud-suave mb-4"
+                        id="estadoGuardadoResultado"
+                    >
+                        Esperando resultado...
+                    </p>
 
                     <div class="d-grid gap-2">
-                        <button type="button" class="btn-fleet" id="btnReintentarGuardado" hidden>REINTENTAR GUARDADO</button>
-                        <button type="button" class="btn-fleet btn-fleet-grande" id="btnVerPuntuaciones">VER PUNTUACIONES</button>
-                        <button type="button" class="btn-fleet" id="btnResultadoDashboard">VOLVER AL DASHBOARD</button>
+
+                        <button
+                            type="button"
+                            class="btn-fleet"
+                            id="btnReintentarGuardado"
+                            hidden
+                        >
+                            REINTENTAR GUARDADO
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn-fleet btn-fleet-grande"
+                            id="btnVerPuntuaciones"
+                        >
+                            VER PUNTUACIONES
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn-fleet"
+                            id="btnResultadoDashboard"
+                        >
+                            VOLVER AL DASHBOARD
+                        </button>
+
                     </div>
+
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Dependencias del juego -->
     <script src="assets/vendor/bootstrap/bootstrap.bundle.min.js"></script>
+
     <script src="/socket.io/socket.io.js"></script>
+
     <script src="js/common.js"></script>
+
     <script src="js/webservice.js"></script>
-    <script type="module" src="js/juego/main.js"></script>
+
+    <script
+        type="module"
+        src="js/juego/main.js"
+    ></script>
+
 </body>
 </html>

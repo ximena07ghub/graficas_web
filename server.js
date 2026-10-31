@@ -1,17 +1,36 @@
+
 import express from "express";
 import http from "node:http";
 import path from "node:path";
+import { randomInt } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import {
+    crearMotorPartida,
+    estadoPublico,
+    flotaPropia,
+    registrarFlota,
+    disparar,
+    resultadoPartida
+} from "./motorPartida.js";
+
+const __dirname = path.dirname(
+    fileURLToPath(import.meta.url)
+);
+
 const PORT = Number(process.env.PORT) || 3000;
+
+const PHP_URL = process.env.FLEET_PHP_URL ||
+    "http://127.0.0.1/WebServices/guardar_puntaje.php";
+
+const INTERNAL_KEY = process.env.FLEET_INTERNAL_KEY || "";
 
 const app = express();
 const httpServer = http.createServer(app);
 const io = new Server(httpServer);
 
+// Páginas permitidas del sitio.
 const paginas = new Set([
     "index.html",
     "dashboard.html",
@@ -27,345 +46,709 @@ const paginas = new Set([
 ]);
 
 app.disable("x-powered-by");
-app.use("/css", express.static(path.join(__dirname, "css")));
-app.use("/js", express.static(path.join(__dirname, "js")));
-app.use("/assets", express.static(path.join(__dirname, "assets")));
-app.use("/public", express.static(path.join(__dirname, "public"))); // aqui esta mi carpeta publica donde estann los modelos jj
-app.use("/vendor/three", express.static(path.join(__dirname, "node_modules", "three")));
 
+// Carpetas públicas necesarias para el frontend.
+for (const carpeta of ["css", "js", "assets", "public"]) {
+    app.use(
+        `/${carpeta}`,
+        express.static(path.join(__dirname, carpeta))
+    );
+}
 
+app.use(
+    "/vendor/three",
+    express.static(
+        path.join(__dirname, "node_modules", "three")
+    )
+);
 
 app.get("/api/status", (_req, res) => {
     res.json({
         ok: true,
         proyecto: "Fleet Command",
-        servidor: "Express + Socket.IO",
-        puerto: PORT
+        servidor: "Express + Socket.IO"
     });
 });
 
-app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get("/", (_req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
+
 app.get("/:pagina", (req, res, next) => {
-    if (!paginas.has(req.params.pagina)) return next();
-    res.sendFile(path.join(__dirname, req.params.pagina));
+    if (!paginas.has(req.params.pagina)) {
+        return next();
+    }
+
+    res.sendFile(
+        path.join(__dirname, req.params.pagina)
+    );
 });
 
 app.use((_req, res) => {
     res.status(404).send("Recurso no encontrado.");
 });
 
+// Salas activas almacenadas en memoria.
 const salas = new Map();
-const TIEMPO_RECONEXION_MS = 30 * 1000;
-const RETENCION_SALA_MS = 2 * 60 * 1000;
 
-// Una sala replica el mode de jugador al que se une a la sala
+const TIEMPO_RECONEXION_MS = 30_000;
+const RETENCION_SALA_MS = 120_000;
 
-const CONFIGURACION_DEFECTO = Object.freeze({
+const CONFIG_DEFECTO = {
     rival: "online",
-    modo: "rafaga",
+    modo: "clasico",
     mapa: "playa",
     dificultad: "normal"
-});
+};
 
 function normalizarConfiguracion(valor = {}) {
-    const configuracion = valor && typeof valor === "object" ? valor : {};
-
     return {
-        //  sala
-
         rival: "online",
-        modo: ["clasico", "rafaga"].includes(configuracion.modo)
-            ? configuracion.modo
-            : CONFIGURACION_DEFECTO.modo,
-        mapa: ["playa", "tormenta", "artico"].includes(configuracion.mapa)
-            ? configuracion.mapa
-            : CONFIGURACION_DEFECTO.mapa,
-        dificultad: ["normal", "dificil"].includes(configuracion.dificultad)
-            ? configuracion.dificultad
-            : CONFIGURACION_DEFECTO.dificultad
+
+        modo: ["clasico", "rafaga"].includes(valor?.modo)
+            ? valor.modo
+            : CONFIG_DEFECTO.modo,
+
+        mapa: ["playa", "tormenta", "artico"].includes(valor?.mapa)
+            ? valor.mapa
+            : CONFIG_DEFECTO.mapa,
+
+        dificultad: ["normal", "dificil"].includes(
+            valor?.dificultad
+        )
+            ? valor.dificultad
+            : CONFIG_DEFECTO.dificultad
     };
 }
 
 function crearCodigoSala() {
-    const alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let codigo = "";
+    const caracteres =
+        "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+    let codigo;
 
     do {
-        codigo = Array.from({ length: 5 }, () =>
-            alfabeto[Math.floor(Math.random() * alfabeto.length)]
+        codigo = Array.from(
+            { length: 5 },
+            () => caracteres[randomInt(caracteres.length)]
         ).join("");
     } while (salas.has(codigo));
 
     return codigo;
 }
 
-function normalizarCodigo(valor) {
-    return String(valor || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+function normalizarNombre(nombre) {
+    if (typeof nombre !== "string") return null;
+
+    const limpio = nombre.trim();
+
+    return /^[\p{L}\p{N}_ .-]{3,24}$/u.test(limpio)
+        ? limpio
+        : null;
 }
 
-function normalizarClienteId(valor, socketId) {
-    return String(valor || socketId).trim().slice(0, 80) || socketId;
+function normalizarClienteId(valor) {
+    return typeof valor === "string" &&
+        /^[a-zA-Z0-9-]{20,80}$/.test(valor)
+            ? valor
+            : null;
 }
 
-function datosSala(codigo) {
-    const sala = salas.get(codigo);
-    if (!sala) return null;
-
+// Datos públicos de la sala.
+function estadoSala(sala) {
     return {
-        codigo,
+        codigo: sala.codigo,
         configuracion: { ...sala.configuracion },
+
         jugadores: [...sala.jugadores.values()]
-            .filter((jugador) => jugador.conectado)
-            .map((jugador) => ({
-                socketId: jugador.socketId,
-                nombre: jugador.nombre,
-                slot: jugador.slot,
-                listo: true
-            }))
+            .filter(jugador => jugador.conectado)
+            .map(({ nombre, slot }) => ({
+                nombre,
+                slot,
+                listo: Boolean(sala.partida.flotas[slot])
+            })),
+
+        estadoJuego: estadoPublico(sala.partida),
+        guardado: sala.guardado
     };
 }
 
-function publicarSala(codigo) {
-    const datos = datosSala(codigo);
-    if (datos) io.to(codigo).emit("sala:estado", datos);
+function publicarSala(sala) {
+    io.to(sala.codigo).emit(
+        "sala:estado",
+        estadoSala(sala)
+    );
 }
 
-function cancelarEliminacionSala(sala) {
-    if (!sala?.timerEliminacion) return;
-    clearTimeout(sala.timerEliminacion);
-    sala.timerEliminacion = null;
+function cancelarTemporizador(jugador) {
+    if (jugador?.timerSalida) {
+        clearTimeout(jugador.timerSalida);
+    }
+
+    if (jugador) {
+        jugador.timerSalida = null;
+    }
 }
 
-function programarEliminacionSala(codigo, sala) {
-    cancelarEliminacionSala(sala);
+function programarEliminarSala(sala) {
+    if (sala.timerEliminacion) {
+        clearTimeout(sala.timerEliminacion);
+    }
+
     sala.timerEliminacion = setTimeout(() => {
-        const actual = salas.get(codigo);
-        if (actual && actual.jugadores.size === 0) {
-            salas.delete(codigo);
-            console.log(`[SALA] ${codigo} eliminada por inactividad.`);
+        if (sala.jugadores.size === 0) {
+            salas.delete(sala.codigo);
         }
     }, RETENCION_SALA_MS);
 }
 
-function cancelarSalidaJugador(jugador) {
-    if (!jugador?.timerSalida) return;
-    clearTimeout(jugador.timerSalida);
-    jugador.timerSalida = null;
-}
+function cancelarPartidaPorAbandono(sala) {
+    if (sala.partida.fase !== "en_curso") return;
 
-function programarSalidaJugador(codigo, clienteId, jugador) {
-    cancelarSalidaJugador(jugador);
+    sala.partida.fase = "cancelada";
 
-    jugador.timerSalida = setTimeout(() => {
-        const sala = salas.get(codigo);
-        const actual = sala?.jugadores.get(clienteId);
-        if (!sala || !actual || actual.conectado) return;
-
-        sala.jugadores.delete(clienteId);
-        publicarSala(codigo);
-
-        if (sala.jugadores.size === 0) {
-            programarEliminacionSala(codigo, sala);
-        }
-    }, TIEMPO_RECONEXION_MS);
+    io.to(sala.codigo).emit(
+        "juego:estado",
+        estadoPublico(sala.partida)
+    );
 }
 
 function salirDeSala(socket, inmediato = false) {
-    const codigo = socket.data.sala;
-    const clienteId = socket.data.clienteId;
-    if (!codigo || !clienteId || !salas.has(codigo)) return;
+    const sala = salas.get(socket.data.sala);
 
-    const sala = salas.get(codigo);
-    const jugador = sala.jugadores.get(clienteId);
+    const jugador = sala?.jugadores.get(
+        socket.data.clienteId
+    );
 
-    socket.leave(codigo);
+    if (
+        !sala ||
+        !jugador ||
+        jugador.socketId !== socket.id
+    ) {
+        return;
+    }
+
+    socket.leave(sala.codigo);
     socket.data.sala = null;
     socket.data.slot = null;
 
-    if (!jugador || jugador.socketId !== socket.id) return;
-
     if (inmediato) {
-        cancelarSalidaJugador(jugador);
-        sala.jugadores.delete(clienteId);
+        cancelarTemporizador(jugador);
+        sala.jugadores.delete(jugador.clienteId);
+        cancelarPartidaPorAbandono(sala);
     } else {
         jugador.conectado = false;
         jugador.socketId = null;
-        programarSalidaJugador(codigo, clienteId, jugador);
+
+        cancelarTemporizador(jugador);
+
+        jugador.timerSalida = setTimeout(() => {
+            if (jugador.conectado) return;
+
+            sala.jugadores.delete(jugador.clienteId);
+            cancelarPartidaPorAbandono(sala);
+            publicarSala(sala);
+
+            if (sala.jugadores.size === 0) {
+                programarEliminarSala(sala);
+            }
+        }, TIEMPO_RECONEXION_MS);
     }
 
-    publicarSala(codigo);
+    publicarSala(sala);
 
     if (sala.jugadores.size === 0) {
-        programarEliminacionSala(codigo, sala);
+        programarEliminarSala(sala);
     }
 }
 
-function unirJugador(socket, codigo, nombre, clienteIdRecibido) {
+// Admite o reconecta un jugador.
+function unirJugador(
+    socket,
+    codigo,
+    nombreRecibido,
+    idRecibido
+) {
     const sala = salas.get(codigo);
+
+    const nombre = normalizarNombre(nombreRecibido);
+    const clienteId = normalizarClienteId(idRecibido);
+
     if (!sala) {
-        return { ok: false, mensaje: "La sala no existe. Verifica el código y vuelve a intentarlo." };
-    }
-
-    const clienteId = normalizarClienteId(clienteIdRecibido, socket.id);
-    const existente = sala.jugadores.get(clienteId);
-
-    // Si la misma pestaña se reconecta, recupera su mismo lugar en la sala
-
-    if (existente) {
-        cancelarSalidaJugador(existente);
-        cancelarEliminacionSala(sala);
-
-        const socketAnterior = existente.socketId ? io.sockets.sockets.get(existente.socketId) : null;
-        if (socketAnterior && socketAnterior.id !== socket.id) {
-            socketAnterior.leave(codigo);
-            socketAnterior.data.sala = null;
-            socketAnterior.data.slot = null;
-        }
-
-        existente.socketId = socket.id;
-        existente.nombre = String(nombre || existente.nombre).trim().slice(0, 24) || existente.nombre;
-        existente.conectado = true;
-
-        socket.join(codigo);
-        socket.data.sala = codigo;
-        socket.data.slot = existente.slot;
-        socket.data.clienteId = clienteId;
-
-        publicarSala(codigo);
-        console.log(`[SALA] ${codigo}: J${existente.slot} reconectado.`);
         return {
-            ok: true,
-            codigo,
-            slot: existente.slot,
-            socketId: socket.id,
-            recuperada: true,
-            configuracion: { ...sala.configuracion }
+            ok: false,
+            mensaje: "La sala no existe."
         };
     }
 
-    if (sala.jugadores.size >= 2) {
-        return { ok: false, mensaje: "La sala ya tiene dos jugadores." };
+    if (!nombre || !clienteId) {
+        return {
+            ok: false,
+            mensaje: "Nombre o sesión inválidos."
+        };
     }
 
-    // Si estaba en otra sala sale de ella antes de entrar a la nueva
+    const existente = sala.jugadores.get(clienteId);
 
-    if (socket.data.sala && socket.data.sala !== codigo) {
+    if (
+        !existente &&
+        sala.partida.fase !== "colocando"
+    ) {
+        return {
+            ok: false,
+            mensaje: "La partida ya comenzó."
+        };
+    }
+
+    if (!existente && sala.jugadores.size >= 2) {
+        return {
+            ok: false,
+            mensaje: "La sala está llena."
+        };
+    }
+
+    const nombreDuplicado = [
+        ...sala.jugadores.values()
+    ].some(jugador =>
+        jugador.clienteId !== clienteId &&
+        jugador.nombre.toLowerCase() === nombre.toLowerCase()
+    );
+
+    if (nombreDuplicado) {
+        return {
+            ok: false,
+            mensaje: "Cada jugador necesita otro nombre."
+        };
+    }
+
+    if (existente && existente.nombre !== nombre) {
+        return {
+            ok: false,
+            mensaje: "Reconecta con el mismo nombre."
+        };
+    }
+
+    // Abandona la sala anterior, si corresponde.
+    if (
+        socket.data.sala &&
+        socket.data.sala !== codigo
+    ) {
         salirDeSala(socket, true);
     }
 
-    cancelarEliminacionSala(sala);
+    if (sala.timerEliminacion) {
+        clearTimeout(sala.timerEliminacion);
+    }
 
-    const slotsUsados = new Set([...sala.jugadores.values()].map((j) => j.slot));
-    const slot = slotsUsados.has(1) ? 2 : 1;
-    const jugador = {
-        clienteId,
-        socketId: socket.id,
-        nombre: String(nombre || `Jugador ${slot}`).trim().slice(0, 24) || `Jugador ${slot}`,
-        slot,
-        conectado: true,
-        timerSalida: null
-    };
+    sala.timerEliminacion = null;
 
-    sala.jugadores.set(clienteId, jugador);
+    let jugador = existente;
+
+    if (jugador) {
+        cancelarTemporizador(jugador);
+
+        const anterior = jugador.socketId
+            ? io.sockets.sockets.get(jugador.socketId)
+            : null;
+
+        if (anterior && anterior.id !== socket.id) {
+            anterior.leave(codigo);
+            anterior.data.sala = null;
+            anterior.data.slot = null;
+        }
+    } else {
+        const primerSlotOcupado = [
+            ...sala.jugadores.values()
+        ].some(j => j.slot === 1);
+
+        const slot = primerSlotOcupado ? 2 : 1;
+
+        jugador = {
+            clienteId,
+            nombre,
+            slot,
+            socketId: null,
+            conectado: false,
+            timerSalida: null
+        };
+
+        sala.jugadores.set(clienteId, jugador);
+    }
+
+    jugador.socketId = socket.id;
+    jugador.conectado = true;
+
     socket.join(codigo);
-    socket.data.sala = codigo;
-    socket.data.slot = slot;
-    socket.data.clienteId = clienteId;
 
-    publicarSala(codigo);
-    console.log(`[SALA] ${codigo}: J${slot} conectado (${jugador.nombre}).`);
+    socket.data.sala = codigo;
+    socket.data.clienteId = clienteId;
+    socket.data.slot = jugador.slot;
+
+    publicarSala(sala);
+
     return {
         ok: true,
         codigo,
-        slot,
-        socketId: socket.id,
-        configuracion: { ...sala.configuracion }
+        slot: jugador.slot,
+        recuperada: Boolean(existente),
+        configuracion: { ...sala.configuracion },
+        estadoJuego: estadoPublico(sala.partida),
+        flotaPropia: flotaPropia(
+            sala.partida,
+            jugador.slot
+        ),
+        guardado: sala.guardado
     };
 }
 
-//NUESTRA CONEXION SOCEKT 
+// Comprueba quién envía una acción.
+function contextoJugador(socket) {
+    const sala = salas.get(socket.data.sala);
 
-io.on("connection", (socket) => {
-    socket.emit("servidor:conectado", { socketId: socket.id });
+    const jugador = sala?.jugadores.get(
+        socket.data.clienteId
+    );
 
-    socket.on("sala:crear", (datos = {}, responder = () => {}) => {
-        const codigo = crearCodigoSala();
-        salas.set(codigo, {
-            jugadores: new Map(),
-            timerEliminacion: null,
-            configuracion: normalizarConfiguracion(datos.configuracion)
-        });
-        console.log(`[SALA] creada ${codigo}.`);
-        responder(unirJugador(socket, codigo, datos.nombre, datos.clienteId));
-    });
+    if (
+        jugador?.socketId !== socket.id ||
+        !jugador.conectado
+    ) {
+        return null;
+    }
 
-    socket.on("sala:unirse", (datos = {}, responder = () => {}) => {
-        const codigo = normalizarCodigo(datos.codigo);
-        if (!codigo) {
-            responder({ ok: false, mensaje: "Escribe un código de sala." });
-            return;
+    return { sala, jugador };
+}
+
+// Envía resultados validados al servicio PHP privado.
+async function persistirResultado(sala) {
+    if (sala.partida.fase !== "finalizada") return;
+
+    if (
+        sala.guardado === "guardado" ||
+        sala.guardado === "guardando"
+    ) {
+        return;
+    }
+
+    sala.guardado = "guardando";
+
+    io.to(sala.codigo).emit(
+        "juego:guardado",
+        { estado: "guardando" }
+    );
+
+    try {
+        if (!/^[a-f0-9]{64}$/i.test(INTERNAL_KEY)) {
+            throw new Error(
+                "Falta configurar FLEET_INTERNAL_KEY."
+            );
         }
 
-        responder(unirJugador(socket, codigo, datos.nombre, datos.clienteId));
-    });
+        const resultado = resultadoPartida(sala.partida);
 
-    socket.on("sala:salir", (_datos, responder = () => {}) => {
-        salirDeSala(socket, true);
-        responder({ ok: true });
-    });
-
-    socket.on("juego:estadoBarco", (estado = {}) => {
-        const codigo = socket.data.sala;
-        if (!codigo) return;
-
-        const limpio = {
-            propietario: socket.data.slot,
-            barcoId: String(estado.barcoId || "").slice(0, 40),
-            x: Number(estado.x) || 0,
-            y: Number(estado.y) || 0,
-            z: Number(estado.z) || 0,
-            rotY: Number(estado.rotY) || 0
-        };
-
-        socket.to(codigo).emit("juego:estadoBarco", limpio);
-    });
-
-    socket.on("juego:sincronizarFlota", (flota = []) => {
-        const codigo = socket.data.sala;
-        if (!codigo || !Array.isArray(flota)) return;
-
-        const limpia = flota.slice(0, 8).map((estado) => ({
-            propietario: socket.data.slot,
-            barcoId: String(estado.barcoId || "").slice(0, 40),
-            x: Number(estado.x) || 0,
-            y: Number(estado.y) || 0,
-            z: Number(estado.z) || 0,
-            rotY: Number(estado.rotY) || 0
-        }));
-
-        socket.to(codigo).emit("juego:sincronizarFlota", limpia);
-    });
-
-    socket.on("juego:seleccionCasilla", (datos = {}) => {
-        const codigo = socket.data.sala;
-        if (!codigo) return;
-
-        socket.to(codigo).emit("juego:seleccionCasilla", {
-            propietario: socket.data.slot,
-            columna: Number(datos.columna) || 0,
-            fila: Number(datos.fila) || 0
+        const participantes = sala.participantesPartida;
+        
+        if (
+            !Array.isArray(participantes) ||
+            participantes.length !== 2
+        ) {
+            throw new Error(
+                "No se conservaron los participantes del combate."
+            );
+        }
+        
+        const jugadores = participantes.map((participante) => {
+            const slot = participante.slot;
+        
+            return {
+                nombre: participante.nombre,
+                posicion: slot,
+                puntos: resultado.puntuaciones[slot],
+                resultado: resultado.ganador === slot
+                    ? "victoria"
+                    : "derrota"
+            };
         });
+
+        const respuesta = await fetch(PHP_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Fleet-Internal-Key": INTERNAL_KEY
+            },
+            body: JSON.stringify({
+                codigo_sala: sala.codigo,
+                ...sala.configuracion,
+                jugadores
+            }),
+            signal: AbortSignal.timeout(8000)
+        });
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok || !datos?.ok) {
+            throw new Error(
+                datos?.mensaje ||
+                `Error HTTP ${respuesta.status}`
+            );
+        }
+
+        sala.guardado = "guardado";
+
+        io.to(sala.codigo).emit(
+            "juego:guardado",
+            {
+                estado: "guardado",
+                partidaId: datos.partida_id
+            }
+        );
+    } catch (error) {
+        console.error(
+            "No se pudo guardar la partida:",
+            error.message
+        );
+
+        sala.guardado = "error";
+
+        io.to(sala.codigo).emit(
+            "juego:guardado",
+            {
+                estado: "error",
+                mensaje: "No se pudo guardar la partida."
+            }
+        );
+    }
+}
+
+// Comunicación Socket.IO.
+io.on("connection", socket => {
+    socket.emit(
+        "servidor:conectado",
+        { socketId: socket.id }
+    );
+
+    socket.on(
+        "sala:crear",
+        (datos = {}, responder = () => {}) => {
+            const configuracion = normalizarConfiguracion(
+                datos.configuracion
+            );
+
+            const codigo = crearCodigoSala();
+
+            const sala = {
+                codigo,
+                configuracion,
+                jugadores: new Map(),
+                timerEliminacion: null,
+                partida: crearMotorPartida(configuracion),
+                guardado: "pendiente",
+                participantesPartida: null
+            };
+
+            salas.set(codigo, sala);
+
+            const respuesta = unirJugador(
+                socket,
+                codigo,
+                datos.nombre,
+                datos.clienteId
+            );
+
+            if (!respuesta.ok) {
+                salas.delete(codigo);
+            }
+
+            responder(respuesta);
+        }
+    );
+
+    socket.on(
+        "sala:unirse",
+        (datos = {}, responder = () => {}) => {
+            const codigo = String(
+                datos.codigo || ""
+            ).trim().toUpperCase();
+
+            responder(
+                unirJugador(
+                    socket,
+                    codigo,
+                    datos.nombre,
+                    datos.clienteId
+                )
+            );
+        }
+    );
+
+    socket.on(
+        "sala:salir",
+        (_datos, responder = () => {}) => {
+            salirDeSala(socket, true);
+            responder({ ok: true });
+        }
+    );
+
+    // Confirmación privada de la flota.
+    socket.on(
+        "juego:listo",
+        (datos = {}, responder = () => {}) => {
+            const contexto = contextoJugador(socket);
+
+            if (!contexto) {
+                return responder({
+                    ok: false,
+                    mensaje: "Sala no válida."
+                });
+            }
+
+            const { sala, jugador } = contexto;
+
+            const conectados = [
+                ...sala.jugadores.values()
+            ].filter(j => j.conectado);
+
+            if (conectados.length !== 2) {
+                return responder({
+                    ok: false,
+                    mensaje: "Espera al segundo jugador."
+                });
+            }
+
+            const respuesta = registrarFlota(
+                sala.partida,
+                jugador.slot,
+                datos.flota
+            );
+            
+            // Cuando ambas flotas están listas, comienza el combate.
+            if (
+                respuesta.ok &&
+                sala.partida.fase === "en_curso"
+            ) {
+                sala.participantesPartida = [1, 2].map((slot) => {
+                    const participante = [...sala.jugadores.values()]
+                        .find((item) => item.slot === slot);
+            
+                    return {
+                        slot,
+                        nombre: participante.nombre
+                    };
+                });
+            }
+            
+            responder(respuesta);
+
+            if (respuesta.ok) {
+                io.to(sala.codigo).emit(
+                    "juego:estado",
+                    estadoPublico(sala.partida)
+                );
+
+                publicarSala(sala);
+            }
+        }
+    );
+
+    // Disparo validado en el servidor.
+    socket.on(
+        "juego:disparar",
+        (datos = {}, responder = () => {}) => {
+            const contexto = contextoJugador(socket);
+
+            if (!contexto) {
+                return responder({
+                    ok: false,
+                    mensaje: "Sala no válida."
+                });
+            }
+
+            const { sala, jugador } = contexto;
+
+            const conectados = [
+                ...sala.jugadores.values()
+            ].filter(j => j.conectado);
+
+            if (conectados.length !== 2) {
+                return responder({
+                    ok: false,
+                    mensaje: "Espera a que el rival se reconecte."
+                });
+            }
+
+            const respuesta = disparar(
+                sala.partida,
+                jugador.slot,
+                datos
+            );
+
+            responder(respuesta);
+
+            if (!respuesta.ok) return;
+
+            io.to(sala.codigo).emit(
+                "juego:disparo",
+                respuesta.evento
+            );
+
+            io.to(sala.codigo).emit(
+                "juego:estado",
+                respuesta.estado
+            );
+
+            if (sala.partida.fase === "finalizada") {
+                io.to(sala.codigo).emit(
+                    "juego:terminada",
+                    resultadoPartida(sala.partida)
+                );
+
+                void persistirResultado(sala);
+            }
+        }
+    );
+
+    socket.on(
+        "juego:reintentarGuardado",
+        (_datos, responder = () => {}) => {
+            const contexto = contextoJugador(socket);
+
+            if (
+                !contexto ||
+                contexto.sala.partida.fase !== "finalizada"
+            ) {
+                return responder({
+                    ok: false,
+                    mensaje: "No hay partida terminada."
+                });
+            }
+
+            responder({
+                ok: true,
+                estado: contexto.sala.guardado
+            });
+
+            void persistirResultado(contexto.sala);
+        }
+    );
+
+    socket.on("juego:pausa", pausado => {
+        const contexto = contextoJugador(socket);
+
+        if (contexto) {
+            socket.to(contexto.sala.codigo).emit(
+                "juego:pausaRival",
+                Boolean(pausado)
+            );
+        }
     });
 
-    socket.on("juego:pausa", (pausado) => {
-        const codigo = socket.data.sala;
-        if (!codigo) return;
-        socket.to(codigo).emit("juego:pausaRival", Boolean(pausado));
+    socket.on("disconnect", () => {
+        salirDeSala(socket, false);
     });
-
-    socket.on("disconnect", () => salirDeSala(socket, false));
 });
 
 httpServer.listen(PORT, () => {
-    console.log(`Fleet Command disponible en http://localhost:${PORT}`);
+    console.log(
+        `Fleet Command: http://localhost:${PORT}`
+    );
 });

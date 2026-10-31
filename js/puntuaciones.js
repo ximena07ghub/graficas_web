@@ -14,8 +14,11 @@ async function cargarPuntuaciones() {
         cuerpo.innerHTML = "";
 
         if (!datos.puntuaciones.length) {
-            cuerpo.innerHTML = '<tr><td colspan="5"> Aún no hay partidas registradas para este jugador.</td></tr>';
-        } else {
+            cuerpo.innerHTML =
+            '<tr><td colspan="5">' +
+            'Todavía no hay puntuaciones oficiales registradas.' +
+            '</td></tr>';
+                } else {
             datos.puntuaciones.forEach((fila, indice) => {
                 const tr = document.createElement("tr");
                 [

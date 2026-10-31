@@ -1,9 +1,11 @@
+
 function obtenerClienteId() {
     const clave = "fleetClienteSala";
+
     let id = sessionStorage.getItem(clave);
 
     if (!id) {
-        id = window.crypto?.randomUUID?.() || `cliente-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        id = crypto.randomUUID();
         sessionStorage.setItem(clave, id);
     }
 
@@ -12,116 +14,213 @@ function obtenerClienteId() {
 
 export function crearClienteRed(callbacks = {}) {
     if (typeof window.io !== "function") {
-        throw new Error("Socket.IO no está disponible. Inicia el proyecto con node server.js.");
+        throw new Error(
+            "Socket.IO no está disponible. Inicia con npm start."
+        );
     }
 
     const socket = window.io();
     const clienteId = obtenerClienteId();
-    let salaActual = sessionStorage.getItem("fleetSalaActual") || "";
+
+    let salaActual =
+        sessionStorage.getItem("fleetSalaActual") || "";
+
     let slot = null;
-    let nombreActual = sessionStorage.getItem("fleetNombreSala") || "";
+
+    let nombreActual =
+        sessionStorage.getItem("fleetNombreSala") || "";
 
     function guardarSala() {
-        if (salaActual) sessionStorage.setItem("fleetSalaActual", salaActual);
-        if (nombreActual) sessionStorage.setItem("fleetNombreSala", nombreActual);
+        if (salaActual) {
+            sessionStorage.setItem(
+                "fleetSalaActual",
+                salaActual
+            );
+        }
+
+        if (nombreActual) {
+            sessionStorage.setItem(
+                "fleetNombreSala",
+                nombreActual
+            );
+        }
     }
 
-    function limpiarSalaGuardada() {
+    function limpiarSala() {
         sessionStorage.removeItem("fleetSalaActual");
         sessionStorage.removeItem("fleetNombreSala");
     }
 
-    function intentarRecuperarSala() {
-        if (!salaActual || !nombreActual) return;
+    function procesarRespuestaSala(respuesta) {
+        if (respuesta?.ok) {
+            salaActual = respuesta.codigo || salaActual;
+            slot = respuesta.slot ?? slot;
+            guardarSala();
+        }
 
-        socket.emit("sala:unirse", {
-            codigo: salaActual,
-            nombre: nombreActual,
-            clienteId
-        }, (respuesta) => {
-            if (respuesta?.ok) {
-                salaActual = respuesta.codigo || salaActual;
-                slot = respuesta.slot ?? slot;
-                guardarSala();
-                callbacks.reconexionSala?.(respuesta);
+        return respuesta || {
+            ok: false,
+            mensaje: "Respuesta inválida."
+        };
+    }
+
+    function emitirConRespuesta(evento, datos = {}) {
+        return new Promise(resolve => {
+            if (!socket.connected) {
+                resolve({
+                    ok: false,
+                    mensaje: "Sin conexión con Node.js."
+                });
                 return;
             }
 
-            salaActual = "";
-            slot = null;
-            limpiarSalaGuardada();
-            callbacks.salaPerdida?.(respuesta?.mensaje || "La sala ya no está disponible.");
+            socket.timeout(8000).emit(
+                evento,
+                { ...datos, clienteId },
+                (error, respuesta) => {
+                    if (error) {
+                        resolve({
+                            ok: false,
+                            mensaje: "El servidor no respondió."
+                        });
+                        return;
+                    }
+
+                    resolve(respuesta || {
+                        ok: false,
+                        mensaje: "Respuesta vacía."
+                    });
+                }
+            );
         });
+    }
+
+    async function recuperarSala() {
+        if (!salaActual || !nombreActual) return;
+
+        const respuesta = procesarRespuestaSala(
+            await emitirConRespuesta(
+                "sala:unirse",
+                {
+                    codigo: salaActual,
+                    nombre: nombreActual
+                }
+            )
+        );
+
+        if (respuesta.ok) {
+            callbacks.reconexionSala?.(respuesta);
+            return;
+        }
+
+        salaActual = "";
+        slot = null;
+        limpiarSala();
+
+        callbacks.salaPerdida?.(
+            respuesta.mensaje || "La sala ya no existe."
+        );
     }
 
     socket.on("connect", () => {
         callbacks.conexion?.(true, socket.id);
-        intentarRecuperarSala();
+        void recuperarSala();
     });
 
-    socket.on("disconnect", () => callbacks.conexion?.(false, socket.id));
-    socket.on("sala:estado", (datos) => callbacks.sala?.(datos));
-    socket.on("juego:estadoBarco", (estado) => callbacks.estadoBarco?.(estado));
-    socket.on("juego:sincronizarFlota", (flota) => callbacks.flota?.(flota));
-    socket.on("juego:seleccionCasilla", (datos) => callbacks.seleccionCasilla?.(datos));
-    socket.on("juego:pausaRival", (pausado) => callbacks.pausaRival?.(pausado));
+    socket.on("disconnect", () => {
+        callbacks.conexion?.(false, socket.id);
+    });
 
-    function solicitar(evento, datos) {
-        return new Promise((resolve) => {
-            let respondido = false;
-            const timer = window.setTimeout(() => {
-                if (!respondido) resolve({ ok: false, mensaje: "El servidor no respondió a tiempo." });
-            }, 5000);
+    socket.on("sala:estado", datos => {
+        callbacks.sala?.(datos);
+    });
 
-            socket.emit(evento, { ...datos, clienteId }, (respuesta) => {
-                respondido = true;
-                window.clearTimeout(timer);
+    socket.on("juego:estado", estado => {
+        callbacks.estadoJuego?.(estado);
+    });
 
-                if (respuesta?.ok) {
-                    salaActual = respuesta.codigo || salaActual;
-                    slot = respuesta.slot ?? slot;
-                    guardarSala();
-                }
+    socket.on("juego:disparo", evento => {
+        callbacks.disparo?.(evento);
+    });
 
-                resolve(respuesta || { ok: false, mensaje: "Respuesta inválida del servidor." });
-            });
-        });
-    }
+    socket.on("juego:terminada", resultado => {
+        callbacks.terminada?.(resultado);
+    });
+
+    socket.on("juego:guardado", datos => {
+        callbacks.guardado?.(datos);
+    });
+
+    socket.on("juego:pausaRival", estado => {
+        callbacks.pausaRival?.(estado);
+    });
 
     return {
-        socket,
-        get sala() { return salaActual; },
-        get slot() { return slot; },
-        crearSala(nombre, configuracion) {
-            nombreActual = String(nombre || "Jugador");
-            guardarSala();
-            return solicitar("sala:crear", {
-                nombre: nombreActual,
-                configuracion
-            });
+        get sala() {
+            return salaActual;
         },
-        unirseSala(codigo, nombre) {
-            nombreActual = String(nombre || "Jugador");
-            return solicitar("sala:unirse", { codigo, nombre: nombreActual });
+
+        get slot() {
+            return slot;
         },
+
+        async crearSala(nombre, configuracion) {
+            nombreActual = nombre;
+
+            const respuesta = await emitirConRespuesta(
+                "sala:crear",
+                { nombre, configuracion }
+            );
+
+            return procesarRespuestaSala(respuesta);
+        },
+
+        async unirseSala(codigo, nombre) {
+            nombreActual = nombre;
+
+            const respuesta = await emitirConRespuesta(
+                "sala:unirse",
+                { codigo, nombre }
+            );
+
+            return procesarRespuestaSala(respuesta);
+        },
+
         salirSala() {
-            socket.emit("sala:salir", { clienteId }, () => {});
+            if (socket.connected) {
+                socket.emit("sala:salir", {});
+            }
+
             salaActual = "";
             slot = null;
             nombreActual = "";
-            limpiarSalaGuardada();
+            limpiarSala();
         },
-        enviarBarco(estado) {
-            if (salaActual) socket.emit("juego:estadoBarco", estado);
+
+        confirmarFlota(flota) {
+            return emitirConRespuesta(
+                "juego:listo",
+                { flota }
+            );
         },
-        enviarFlota(flota) {
-            if (salaActual) socket.emit("juego:sincronizarFlota", flota);
+
+        disparar(columna, fila) {
+            return emitirConRespuesta(
+                "juego:disparar",
+                { columna, fila }
+            );
         },
-        enviarCasilla(datos) {
-            if (salaActual) socket.emit("juego:seleccionCasilla", datos);
+
+        reintentarGuardado() {
+            return emitirConRespuesta(
+                "juego:reintentarGuardado"
+            );
         },
+
         enviarPausa(pausado) {
-            if (salaActual) socket.emit("juego:pausa", pausado);
+            if (salaActual && socket.connected) {
+                socket.emit("juego:pausa", pausado);
+            }
         }
     };
 }

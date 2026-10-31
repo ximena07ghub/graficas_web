@@ -1,17 +1,18 @@
+
 {
   "name": "fleet-command",
   "version": "2.0.0",
   "private": true,
-  "description": "Segundo avance de Fleet Command con Three.js, Express y Socket.IO.",
+  "description": "Fleet Command: juego 3D multijugador.",
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
+    "start": "node --env-file=.env server.js",
+    "dev": "node --env-file=.env --watch server.js",
     "check": "node --check server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.6.0"
   },
   "dependencies": {
     "express": "^4.21.2",
