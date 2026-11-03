@@ -1,128 +1,155 @@
-
 import * as THREE from "three";
 
 import { crearEscena } from "./escena.js";
+import { crearTableros } from "./tableros.js";
+import { crearVistaFlota } from "./barcos.js";
+import { crearAudioAmbiente } from "./audioAmbiente.js";
 
 import {
-    crearFlotaProvisional,
-    encontrarBarcoDesdeObjeto,
-    marcarSeleccion,
-    moverBarcoSeguro,
-    serializarFlota
-} from "./barcos.js";
-
-import {
-    describirConfiguracion,
-    obtenerCantidadBarcos,
     obtenerConfiguracion,
-    obtenerTamanoTablero
+    describirConfiguracion
 } from "./configuracion.js";
 
+import {
+    dispararConEspera,
+    enviarRafagaConEspera
+} from "./tiemposCombate.js";
+
 import { crearClienteRed } from "./red.js";
+import { cargarModeloFBX } from "./modelos.js";
 
 import {
-    cargarModeloFBX,
-    clonarModeloBarco
-} from "./modelos.js";
+    obtenerReglas,
+    celdasBarco,
+    validarFlota,
+    crearFlotaAleatoria,
+    crearMotorPartida,
+    registrarFlota,
+    estadoPublico,
+    disparar,
+    terminarTurno,
+    enviarRafaga,
+    elegirDisparoIA
+} from "./reglasCombate.js";
 
-// 1. Obtener usuario y configuración.
+const $ = id => document.getElementById(id);
+
 const perfil = window.FleetApp?.obtenerPerfil();
 
 if (!perfil) {
-    sessionStorage.setItem(
-        "fleetAviso",
-        "Inicia sesión para jugar."
-    );
-
     window.location.replace("index.html");
-
-    throw new Error("No hay sesión activa.");
+    throw new Error("Inicia sesion para jugar.");
 }
 
 const configuracion = obtenerConfiguracion();
+const reglas = obtenerReglas(configuracion);
 
-const tamanoTablero =
-    obtenerTamanoTablero(configuracion.dificultad);
+const online = configuracion.rival === "online";
+const rafaga = reglas.modo === "rafaga";
 
-const cantidadBarcos =
-    obtenerCantidadBarcos(configuracion.dificultad);
-
-const $ = (id) => document.getElementById(id);
-
-// 2. Referencias a los elementos HTML.
-const hudConfiguracion = $("hudConfiguracion");
-const estadoConexion = $("estadoConexion");
-const estadoSala = $("estadoSala");
-const estadoJugador = $("estadoJugador");
-const estadoLobby = $("estadoLobby");
-const mensajeJuego = $("mensajeJuego");
-const codigoSala = $("codigoSala");
-
-const btnFlotaLista = $("btnFlotaLista");
-const btnCrearSala = $("btnCrearSala");
-const btnUnirseSala = $("btnUnirseSala");
-
-const btnReintentarGuardado =
-    $("btnReintentarGuardado");
-
-const textoResultado = $("textoResultado");
-const puntosResultado = $("puntosResultado");
-
-const estadoGuardadoResultado =
-    $("estadoGuardadoResultado");
-
-// Actualizar el HTML antes de cargar modelos pesados.
-hudConfiguracion.textContent =
+$("hudConfiguracion").textContent =
     describirConfiguracion(configuracion);
 
-estadoConexion.textContent = "PREPARANDO ESCENA";
-
-// 3. Crear la escena WebGL.
 const mundo = crearEscena({
     mapa: configuracion.mapa,
-    tamanoTablero,
+    tamanoTablero: reglas.tamano,
     contenedor: $("contenedorThree")
 });
 
-// 4. Modales Bootstrap.
-const modal = (id) =>
-    window.bootstrap.Modal.getOrCreateInstance($(id));
+const tableros = crearTableros(
+    mundo,
+    reglas.tamano
+);
+
+const vista = crearVistaFlota(
+    tableros.propio
+);
+
+const ambiente = crearAudioAmbiente(
+    configuracion.mapa
+);
+
+const modal = id =>
+    window.bootstrap.Modal.getOrCreateInstance(
+        $(id)
+    );
 
 const modalSala = modal("modalSala");
 const modalPausa = modal("modalPausa");
 const modalResultado = modal("modalResultado");
 
-// 5. Variables del juego.
-const raycaster = new THREE.Raycaster();
+const rayo = new THREE.Raycaster();
 const puntero = new THREE.Vector2();
 
 let red = null;
+let motor = null;
+let estado = null;
 let slotLocal = null;
 
-let flotaLocal = [];
-let flotaIA = [];
+let flota = [];
+let seleccionado = null;
+let herramienta = "seleccionar";
+let objetivos = [];
 
-let barcoSeleccionado = null;
+let disparoActivado = false;
 
-let modeloEstandar = null;
-let modeloDificil = null;
-
-let faseOnline = "colocando";
-let flotaConfirmada = false;
-
+let ocupado = false;
 let pausado = false;
-let partidaFinalizada = false;
-let disparoPendiente = false;
+let terminado = false;
+let destruido = false;
 
+let conectado = false;
+let conectados = 0;
+
+let arrastre = null;
 let inicioPuntero = null;
+
+let timerIA = null;
 let ultimoRender = 0;
 
-const tirosDibujados = new Set();
-const marcadores = [];
+let ultimoGuardado = {
+    estado: "pendiente"
+};
 
-// 6. Dibujar continuamente la escena.
-function renderLoop(tiempo) {
-    if (tiempo - ultimoRender < 1000 / 30) {
+function aviso(texto) {
+    window.FleetApp.mostrarToast(texto);
+}
+
+function mensaje(texto) {
+    $("mensajeJuego").textContent = texto;
+}
+
+const hayRival = () =>
+    !online ||
+    (conectado && conectados === 2);
+
+const preparando = () =>
+    !!slotLocal &&
+    estado?.fase === "colocando" &&
+    !estado.listos[slotLocal] &&
+    !ocupado &&
+    !pausado;
+
+const puedeAtacar = () =>
+    !!slotLocal &&
+    estado?.fase === "en_curso" &&
+    !ocupado &&
+    !pausado &&
+    !estado.disparoPendiente &&
+    hayRival() &&
+    (
+        rafaga
+            ? !estado.rafagasListas[slotLocal]
+            : estado.turno === slotLocal &&
+              estado.restantes > 0
+    );
+
+// Renderizado de la escena, sin animaciones nuevas de combate.
+mundo.renderer.setAnimationLoop(tiempo => {
+    if (
+        tiempo - ultimoRender <
+        1000 / 30
+    ) {
         return;
     }
 
@@ -132,419 +159,1252 @@ function renderLoop(tiempo) {
         mundo.scene,
         mundo.camera
     );
-}
+});
 
-mundo.renderer.setAnimationLoop(renderLoop);
-
-// 7. Reemplazar modelo geométrico por un FBX.
-function aplicarModelo(barco, plantilla) {
-    if (!plantilla || !barco) return;
-
-    const copia = clonarModeloBarco(plantilla);
-
-    if (!copia) return;
-
-    barco.clear();
-    barco.add(copia);
-
-    const materiales = [];
-
-    copia.traverse((objeto) => {
-        if (!objeto.isMesh) return;
-
-        const lista = Array.isArray(objeto.material)
-            ? objeto.material
-            : [objeto.material];
-
-        for (const material of lista) {
-            if (
-                material &&
-                !materiales.includes(material)
-            ) {
-                materiales.push(material);
-            }
-        }
-    });
-
-    barco.userData.materiales = materiales;
-}
-
-function aplicarModeloFlota(flota, plantilla) {
-    for (const barco of flota) {
-        aplicarModelo(barco, plantilla);
-    }
-}
-
-// La carga de modelos no bloquea la escena.
+// El juego funciona con barcos de respaldo mientras carga el FBX.
 void cargarModeloFBX(
     "/public/models/yamato.fbx",
     "Yamato",
     2.35
 )
-.then((modelo) => {
-    modeloEstandar = modelo;
-
-    aplicarModeloFlota(flotaLocal, modelo);
-
-    if (configuracion.dificultad !== "dificil") {
-        aplicarModeloFlota(flotaIA, modelo);
+.then(modelo => {
+    if (!destruido) {
+        vista.aplicarModelo(modelo);
     }
 })
-.catch((error) => {
+.catch(error => {
     console.warn(
-        "Se usa el barco geométrico de respaldo.",
+        "Se conservan los barcos geometricos de respaldo.",
         error
     );
 });
 
-// Modelo especial para el modo IA difícil.
-if (
-    configuracion.rival === "ia" &&
-    configuracion.dificultad === "dificil"
-) {
-    void cargarModeloFBX(
-        "/public/models/enemigo_dificil.fbx",
-        "Enemigo difícil",
-        2.35
-    )
-    .then((modelo) => {
-        modeloDificil = modelo;
-        aplicarModeloFlota(flotaIA, modelo);
-    })
-    .catch((error) => {
-        console.warn(
-            "No se cargó el modelo difícil.",
-            error
-        );
-    });
-}
+function refrescarControles() {
+    const prep = preparando();
 
-// 8. Seleccionar un barco.
-function seleccionarBarco(barco) {
-    if (barcoSeleccionado === barco) {
-        barco = null;
+    const turnoPropio =
+        estado?.fase === "en_curso" &&
+        estado.turno === slotLocal;
+
+    if (!puedeAtacar()) {
+        disparoActivado = false;
+        tableros.apuntar(null);
     }
 
-    marcarSeleccion(barcoSeleccionado, false);
-
-    barcoSeleccionado = barco;
-
-    marcarSeleccion(barcoSeleccionado, true);
-
-    mundo.marcador.visible = false;
-
-    if (barco) {
-        mensajeJuego.textContent =
-            `Seleccionado ${barco.userData.barcoId}. ` +
-            "Usa WASD o clic en una casilla.";
-    }
-}
-
-// 9. Preparar los barcos del jugador.
-function prepararFlota(slot) {
-    for (const barco of flotaLocal) {
-        mundo.scene.remove(barco);
-    }
-
-    seleccionarBarco(null);
-
-    slotLocal = slot;
-    flotaConfirmada = false;
-
-    flotaLocal = crearFlotaProvisional({
-        slot,
-        cantidad: cantidadBarcos,
-        scene: mundo.scene,
-        boardHalf: mundo.boardHalf,
-        cellSize: mundo.cellSize
-    });
-
-    aplicarModeloFlota(
-        flotaLocal,
-        modeloEstandar
-    );
-
-    estadoJugador.textContent =
-        `JUGADOR ${slot} // ` +
-        perfil.nombre.toUpperCase();
-
-    btnFlotaLista.hidden =
-        configuracion.rival !== "online";
-}
-
-// Restaurar posiciones tras una reconexión.
-function restaurarFlota(estados) {
-    if (!Array.isArray(estados)) return;
-
-    for (const estado of estados) {
-        const barco = flotaLocal.find(
-            (item) =>
-                item.userData.barcoId === estado.barcoId
-        );
-
-        if (!barco) continue;
-
-        barco.position.x = estado.x;
-        barco.position.z = estado.z;
-        barco.rotation.y = estado.rotY;
-    }
-}
-
-// 10. Convertir un punto 3D en una casilla.
-function puntoACelda(punto) {
-    const columna = THREE.MathUtils.clamp(
-        Math.floor(
-            (punto.x + mundo.boardHalf) /
-            mundo.cellSize
-        ),
-        0,
-        tamanoTablero - 1
-    );
-
-    const fila = THREE.MathUtils.clamp(
-        Math.floor(
-            (punto.z + mundo.boardHalf) /
-            mundo.cellSize
-        ),
-        0,
-        tamanoTablero - 1
-    );
-
-    return {
-        columna,
-        fila,
-
-        x: -mundo.boardHalf +
-            mundo.cellSize * (columna + 0.5),
-
-        z: -mundo.boardHalf +
-            mundo.cellSize * (fila + 0.5)
-    };
-}
-
-// 11. Dibujar un acierto o fallo.
-function dibujarDisparo(datos) {
-    const clave =
-        `${datos.jugador}:${datos.columna}:${datos.fila}`;
-
-    if (tirosDibujados.has(clave)) {
-        return;
-    }
-
-    tirosDibujados.add(clave);
-
-    const marcador = new THREE.Mesh(
-        new THREE.PlaneGeometry(
-            mundo.cellSize * 0.7,
-            mundo.cellSize * 0.7
-        ),
-
-        new THREE.MeshBasicMaterial({
-            color: datos.acierto
-                ? 0xff554d
-                : 0xe9f5ff,
-
-            transparent: true,
-            opacity: 0.75,
-            side: THREE.DoubleSide
-        })
-    );
-
-    marcador.rotation.x = -Math.PI / 2;
-
-    marcador.position.set(
-        -mundo.boardHalf +
-            mundo.cellSize * (datos.columna + 0.5),
-
-        0.12,
-
-        -mundo.boardHalf +
-            mundo.cellSize * (datos.fila + 0.5)
-    );
-
-    mundo.scene.add(marcador);
-    marcadores.push(marcador);
-}
-
-// 12. Mostrar el resultado validado por Node.
-function mostrarResultadoOnline(resultado) {
-    if (
-        partidaFinalizada ||
-        !slotLocal ||
-        !resultado
+    for (
+        const id of
+        ["btnSeleccionar", "btnMover", "selectorBarco"]
     ) {
+        $(id).disabled = !prep;
+    }
+
+    $("btnRotar").disabled =
+        !prep || !seleccionado;
+
+    $("btnIniciarPartida").disabled =
+        !prep || !hayRival();
+
+    $("btnIniciarPartida").hidden =
+        estado?.fase !== "colocando";
+
+    $("btnDisparar").hidden = false;
+
+    $("btnDisparar").disabled =
+        !puedeAtacar();
+
+    $("btnDisparar").textContent =
+        disparoActivado
+            ? "APUNTANDO"
+            : "DISPARAR";
+
+    $("btnDisparar").setAttribute(
+        "aria-pressed",
+        disparoActivado
+    );
+
+    $("btnTerminarTurno").disabled = rafaga
+        ? !puedeAtacar() ||
+          objetivos.length !== 10
+        : !turnoPropio ||
+          estado.restantes !== 0 ||
+          !!estado.disparoPendiente ||
+          ocupado ||
+          pausado ||
+          !hayRival();
+
+    $("btnTerminarTurno").textContent = rafaga
+        ? `TERMINAR TURNO (${objetivos.length}/10)`
+        : "TERMINAR TURNO";
+
+    $("btnMover").setAttribute(
+        "aria-pressed",
+        herramienta === "mover"
+    );
+
+    $("btnSeleccionar").setAttribute(
+        "aria-pressed",
+        herramienta === "seleccionar"
+    );
+
+    $("selectorBarco").value =
+        seleccionado || "";
+
+    $("btnFlotaLista").hidden = true;
+
+    mundo.renderer.domElement.style.cursor =
+        disparoActivado
+            ? "crosshair"
+            : "default";
+}
+
+function mostrarGuardado(datos) {
+    ultimoGuardado = datos || ultimoGuardado;
+
+    if (!online) {
+        $("estadoGuardadoResultado").textContent =
+            "Partida local contra IA. " +
+            "El resultado no se envia a MySQL.";
+
+        $("btnReintentarGuardado").hidden = true;
         return;
     }
 
-    partidaFinalizada = true;
-    pausado = true;
+    const textos = {
+        pendiente:
+            "Resultado validado. Esperando el guardado.",
+        guardando:
+            "Guardando resultado...",
+        guardado:
+            "Partida registrada en MySQL.",
+        error:
+            "No se pudo guardar. Puedes reintentar."
+    };
 
-    mundo.renderer.setAnimationLoop(null);
+    $("estadoGuardadoResultado").textContent =
+        textos[ultimoGuardado.estado] ||
+        textos.pendiente;
+
+    $("btnReintentarGuardado").hidden =
+        ultimoGuardado.estado !== "error";
+}
+
+function mostrarResultado(resultado) {
+    if (!resultado || terminado) return;
+
+    terminado = true;
+
+    ambiente.detener();
+
+    clearTimeout(timerIA);
+    timerIA = null;
 
     modalPausa.hide();
 
-    textoResultado.textContent =
-        resultado.ganador === slotLocal
-            ? "VICTORIA"
-            : "DERROTA";
+    $("textoResultado").textContent =
+        resultado.empate
+            ? "EMPATE"
+            : resultado.ganador === slotLocal
+                ? "VICTORIA"
+                : "DERROTA";
 
-    const puntos = Number(
-        resultado.puntuaciones?.[slotLocal] ?? 0
-    );
+    const rival = slotLocal === 1 ? 2 : 1;
 
-    puntosResultado.textContent =
-        `${puntos} PUNTOS`;
+    $("puntosResultado").textContent =
+        `${resultado.puntuaciones[slotLocal]} PUNTOS` +
+        ` · DAÑO: ${resultado.danos[slotLocal]}` +
+        ` / ${resultado.danos[rival]}`;
 
-    estadoGuardadoResultado.textContent =
-        "Resultado validado; esperando " +
-        "confirmación de MySQL.";
-
-    btnReintentarGuardado.hidden = true;
+    mostrarGuardado(ultimoGuardado);
 
     modalResultado.show();
 }
 
-// 13. Reflejar el estado del guardado.
-function actualizarGuardado(datos) {
-    if (!datos) return;
+function aplicarEstado(nuevo) {
+    if (!nuevo || !slotLocal) return;
 
-    if (datos.estado === "guardado") {
-        estadoGuardadoResultado.textContent =
-            "Partida registrada en MySQL.";
+    estado = nuevo;
 
-        btnReintentarGuardado.hidden = true;
-
-    } else if (datos.estado === "guardando") {
-        estadoGuardadoResultado.textContent =
-            "Guardando resultado...";
-
-        btnReintentarGuardado.hidden = true;
-
-    } else if (datos.estado === "error") {
-        estadoGuardadoResultado.textContent =
-            "No se pudo guardar la partida.";
-
-        btnReintentarGuardado.hidden = false;
+    for (const tiro of estado.historial) {
+        tableros.disparo(tiro, slotLocal);
     }
-}
 
-// 14. Actualizar turno y fase desde el servidor.
-function actualizarEstadoJuego(estado) {
-    if (!estado || !slotLocal) return;
+    const rival = slotLocal === 1 ? 2 : 1;
 
-    faseOnline = estado.fase;
+    const propiosRestantes =
+        reglas.longitudes.length -
+        estado.hundidos[rival];
 
-    flotaConfirmada = Boolean(
-        estado.listos?.[slotLocal]
+    const enemigosRestantes =
+        reglas.longitudes.length -
+        estado.hundidos[slotLocal];
+
+    $("estadoJugador").textContent =
+        `JUGADOR ${slotLocal} // ` +
+        `${perfil.nombre.toUpperCase()}` +
+        ` · TU FLOTA: ${propiosRestantes}` +
+        ` · RIVAL: ${enemigosRestantes}`;
+
+    tableros.mostrarPendiente(
+    estado.disparoPendiente,
+    slotLocal
+);
+
+if (
+    estado.fase === "en_curso" &&
+    estado.disparoPendiente
+) {
+    mensaje(
+        estado.disparoPendiente.tipo === "rafaga"
+            ? "Resolviendo las rafagas..."
+            : estado.disparoPendiente.jugador === slotLocal
+                ? "Disparo en curso..."
+                : "El rival esta disparando..."
     );
 
-    btnFlotaLista.hidden =
-        flotaConfirmada ||
-        faseOnline !== "colocando";
+    refrescarControles();
+    return;
+}
 
-    for (const tiro of estado.historial || []) {
-        dibujarDisparo(tiro);
-    }
-
-    if (faseOnline === "colocando") {
-        mensajeJuego.textContent =
-            flotaConfirmada
-                ? "Flota confirmada. Esperando a tu rival."
-                : "Coloca tus barcos y " +
-                  "presiona CONFIRMAR FLOTA.";
-
-    } else if (faseOnline === "en_curso") {
-        mensajeJuego.textContent =
-            estado.turno === slotLocal
-                ? `TU TURNO: ${estado.restantes} disparo(s).`
-                : "TURNO DEL RIVAL";
-
-    } else if (faseOnline === "cancelada") {
-        mensajeJuego.textContent =
-            "Partida cancelada. Crea otra sala.";
-
-        btnFlotaLista.hidden = true;
-
-    } else if (faseOnline === "finalizada") {
-        mostrarResultadoOnline(
-            estado.resultado
+    if (estado.fase === "colocando") {
+        mensaje(
+            estado.listos[slotLocal]
+                ? "Flota confirmada. Esperando al rival."
+                : "Selecciona un barco; activa MOVER " +
+                  "para arrastrarlo. Gíralo antes de " +
+                  "INICIAR PARTIDA."
         );
+
+    } else if (estado.fase === "en_curso") {
+        if (rafaga) {
+            mensaje(
+                estado.rafagasListas[slotLocal]
+                    ? "Ráfaga enviada. Esperando los diez " +
+                      "disparos del rival."
+                    : "Marca diez casillas del tablero " +
+                      "enemigo y presiona TERMINAR TURNO. " +
+                      "Clic de nuevo para desmarcar."
+            );
+        } else {
+            const ultimo =
+                estado.historial[
+                    estado.historial.length - 1
+                ];
+
+            const impacto = ultimo?.hundido
+                ? "BARCO HUNDIDO"
+                : ultimo?.acierto
+                    ? "IMPACTO"
+                    : "AGUA";
+
+            mensaje(
+                estado.turno !== slotLocal
+                    ? "TURNO DEL RIVAL"
+                    : estado.restantes
+                        ? "TU TURNO: selecciona una casilla " +
+                          "del tablero enemigo"
+                        : `${impacto}. Pulsa TERMINAR TURNO.`
+            );
+        }
+
+    } else if (estado.fase === "cancelada") {
+        mensaje(
+            "Partida cancelada por abandono. " +
+            "Regresa al menú para crear otra."
+        );
+
+        ambiente.detener();
+
+    } else if (estado.fase === "finalizada") {
+        mensaje("PARTIDA TERMINADA");
+
+        objetivos = [];
+        tableros.mostrarObjetivos([]);
+
+        mostrarResultado(estado.resultado);
     }
+
+    refrescarControles();
 }
 
-// 15. La configuración pertenece al creador.
-function sincronizarConfiguracion(configuracionSala) {
-    if (!configuracionSala) return false;
+function prepararVista() {
+    const selector = $("selectorBarco");
 
-    const coincide = [
-        "modo",
-        "mapa",
-        "dificultad"
-    ].every(
-        (campo) =>
-            configuracion[campo] ===
-            configuracionSala[campo]
+    selector.replaceChildren(
+        new Option("Selecciona un barco", "")
     );
 
-    if (coincide) return false;
+    flota.forEach((barco, indice) => {
+        selector.add(
+            new Option(
+                `Barco ${indice + 1}: ` +
+                `${barco.longitud} casillas`,
+                barco.barcoId
+            )
+        );
+    });
 
-    localStorage.setItem(
-        "fleetCommandConfig",
-        JSON.stringify({
-            ...configuracionSala,
-            rival: "online"
-        })
+    vista.actualizar(flota);
+
+    seleccionar(null);
+
+    $("estadoJugador").textContent =
+        `JUGADOR ${slotLocal} // ` +
+        perfil.nombre.toUpperCase();
+}
+
+function seleccionar(id) {
+    seleccionado = id;
+
+    vista.seleccionar(id);
+
+    refrescarControles();
+}
+
+function colocar(
+    id,
+    columna,
+    fila,
+    rotacion,
+    notificar = true
+) {
+    if (!preparando()) return false;
+
+    const candidata = flota.map(barco =>
+        barco.barcoId === id
+            ? {
+                ...barco,
+                columna,
+                fila,
+                rotacion
+            }
+            : { ...barco }
     );
 
-    sessionStorage.setItem(
-        "fleetAviso",
-        "Se aplicó la configuración de la sala."
+    const respuesta = validarFlota(
+        candidata,
+        slotLocal,
+        reglas
     );
 
-    window.location.replace("juego.html");
+    if (!respuesta.ok) {
+        if (notificar) {
+            aviso(respuesta.mensaje);
+        }
+
+        return false;
+    }
+
+    flota = respuesta.flota;
+
+    vista.actualizar(flota);
+    vista.seleccionar(seleccionado);
 
     return true;
 }
 
-// 16. Mostrar integrantes de la sala.
-function actualizarSala(datos) {
-    if (
-        sincronizarConfiguracion(
-            datos?.configuracion
+function girar() {
+    if (!preparando() || !seleccionado) {
+        return;
+    }
+
+    const barco = flota.find(
+        item => item.barcoId === seleccionado
+    );
+
+    colocar(
+        barco.barcoId,
+        barco.columna,
+        barco.fila,
+        (barco.rotacion + 90) % 360
+    );
+}
+
+function localizar(evento) {
+    const rect =
+        mundo.renderer.domElement.getBoundingClientRect();
+
+    puntero.set(
+        (evento.clientX - rect.left) /
+            rect.width * 2 - 1,
+
+        -(evento.clientY - rect.top) /
+            rect.height * 2 + 1
+    );
+
+    rayo.setFromCamera(
+        puntero,
+        mundo.camera
+    );
+
+    return tableros.localizar(rayo);
+}
+
+function barcoEn(celda) {
+    return flota.find(barco =>
+        celdasBarco(barco).some(c =>
+            c.columna === celda.columna &&
+            c.fila === celda.fila
         )
+    );
+}
+
+function clic(evento) {
+    const celda = localizar(evento);
+
+    if (
+        !celda ||
+        pausado ||
+        terminado
     ) {
         return;
     }
 
-    const jugadores = datos?.jugadores || [];
+    if (
+        preparando() &&
+        celda.tablero === tableros.propio
+    ) {
+        seleccionar(
+            barcoEn(celda)?.barcoId || null
+        );
 
-    const codigo =
-        datos?.codigo || red?.sala || "--";
+        return;
+    }
 
-    estadoSala.textContent =
-        `SALA ${codigo} / ${jugadores.length}/2`;
+    if (
+        celda.tablero !== tableros.enemigo ||
+        !puedeAtacar() ||
+        !disparoActivado
+    ) {
+        return;
+    }
 
-    estadoLobby.textContent =
-        jugadores.length === 2
-            ? "Conectados: " +
-              jugadores.map(
-                  (j) => `J${j.slot}: ${j.nombre}`
-              ).join(" · ")
-            : "Esperando al segundo jugador.";
-
-    actualizarEstadoJuego(
-        datos?.estadoJuego
+    const repetido = estado.historial.some(
+        tiro =>
+            tiro.jugador === slotLocal &&
+            tiro.columna === celda.columna &&
+            tiro.fila === celda.fila
     );
 
-    if (jugadores.length === 2) {
+    if (repetido) {
+        return aviso(
+            "Ya atacaste esa casilla."
+        );
+    }
+
+    const destino = {
+        columna: celda.columna,
+        fila: celda.fila
+    };
+
+    // Clasico: el clic dispara directamente.
+    if (!rafaga) {
+        disparoActivado = false;
+
+        tableros.apuntar(null);
+
+        tableros.mostrarPendiente(
+            {
+                tipo: "clasico",
+                jugador: slotLocal,
+                ...destino
+            },
+            slotLocal
+        );
+
+        mensaje("Disparo en curso...");
+
+        void ejecutar(() =>
+            online
+                ? red.disparar(
+                    destino.columna,
+                    destino.fila
+                )
+                : dispararConEspera(
+                    motor,
+                    1,
+                    destino,
+                    { alIniciar: aplicarEstado }
+                )
+        );
+
+        return;
+    }
+
+    // Rafaga: el clic marca una de sus diez casillas.
+    const indice = objetivos.findIndex(
+        objetivo =>
+            objetivo.columna === destino.columna &&
+            objetivo.fila === destino.fila
+    );
+
+    if (indice >= 0) {
+        objetivos.splice(indice, 1);
+
+    } else if (objetivos.length < 10) {
+        objetivos.push(destino);
+
+    } else {
+        return aviso(
+            "Ya seleccionaste diez casillas."
+        );
+    }
+
+    tableros.mostrarObjetivos(objetivos);
+
+    refrescarControles();
+}
+
+const canvas = mundo.renderer.domElement;
+
+canvas.addEventListener(
+    "pointermove",
+    evento => {
+        if (
+            !disparoActivado ||
+            !puedeAtacar() ||
+            arrastre
+        ) {
+            tableros.apuntar(null);
+            return;
+        }
+
+        const celda = localizar(evento);
+
+        const repetida = celda &&
+            estado.historial.some(
+                tiro =>
+                    tiro.jugador === slotLocal &&
+                    tiro.columna === celda.columna &&
+                    tiro.fila === celda.fila
+            );
+
+        tableros.apuntar(
+            celda?.tablero === tableros.enemigo &&
+            !repetida
+                ? celda
+                : null
+        );
+    }
+);
+
+canvas.addEventListener(
+    "pointerleave",
+    () => tableros.apuntar(null)
+);
+
+canvas.addEventListener(
+    "pointerdown",
+    evento => {
+        if (
+            evento.button !== 0 ||
+            pausado ||
+            terminado
+        ) {
+            return;
+        }
+
+        inicioPuntero = {
+            x: evento.clientX,
+            y: evento.clientY
+        };
+
+        // Al apuntar, el clic no comienza un arrastre de camara.
+        if (
+            disparoActivado &&
+            puedeAtacar() &&
+            localizar(evento)?.tablero === tableros.enemigo
+        ) {
+            evento.preventDefault();
+            evento.stopImmediatePropagation();
+            return;
+        }
+
+        if (
+            !preparando() ||
+            herramienta !== "mover"
+        ) {
+            return;
+        }
+
+        const celda = localizar(evento);
+
+        if (
+            celda?.tablero !== tableros.propio
+        ) {
+            return;
+        }
+
+        const barco =
+            barcoEn(celda) ||
+            flota.find(
+                item =>
+                    item.barcoId === seleccionado
+            );
+
+        if (!barco) return;
+
+        const sobreBarco = celdasBarco(barco).some(
+            c =>
+                c.columna === celda.columna &&
+                c.fila === celda.fila
+        );
+
+        seleccionar(barco.barcoId);
+
+        arrastre = {
+            id: barco.barcoId,
+            puntero: evento.pointerId,
+
+            dx: sobreBarco
+                ? celda.columna - barco.columna
+                : 0,
+
+            dy: sobreBarco
+                ? celda.fila - barco.fila
+                : 0,
+
+            original: flota.map(
+                item => ({ ...item })
+            )
+        };
+
+        mundo.controlesCamara.enabled = false;
+
+        canvas.setPointerCapture(
+            evento.pointerId
+        );
+
+        if (!sobreBarco) {
+            colocar(
+                barco.barcoId,
+                celda.columna,
+                celda.fila,
+                barco.rotacion
+            );
+        }
+
+        evento.preventDefault();
+        evento.stopImmediatePropagation();
+    },
+    true
+);
+
+canvas.addEventListener(
+    "pointermove",
+    evento => {
+        if (
+            !arrastre ||
+            arrastre.puntero !== evento.pointerId ||
+            !preparando()
+        ) {
+            return;
+        }
+
+        const celda = localizar(evento);
+
+        if (
+            celda?.tablero !== tableros.propio
+        ) {
+            return;
+        }
+
+        const barco = flota.find(
+            item =>
+                item.barcoId === arrastre.id
+        );
+
+        const columna =
+            celda.columna - arrastre.dx;
+
+        const fila =
+            celda.fila - arrastre.dy;
+
+        if (
+            columna !== barco.columna ||
+            fila !== barco.fila
+        ) {
+            colocar(
+                barco.barcoId,
+                columna,
+                fila,
+                barco.rotacion,
+                false
+            );
+        }
+    },
+    true
+);
+
+function finalizarArrastre(cancelar = false) {
+    if (!arrastre) return;
+
+    const previo = arrastre;
+
+    arrastre = null;
+
+    if (cancelar) {
+        flota = previo.original;
+        vista.actualizar(flota);
+    }
+
+    if (
+        canvas.hasPointerCapture(previo.puntero)
+    ) {
+        canvas.releasePointerCapture(
+            previo.puntero
+        );
+    }
+
+    mundo.controlesCamara.enabled =
+        !pausado;
+
+    inicioPuntero = null;
+}
+
+canvas.addEventListener(
+    "pointerup",
+    evento => {
+        if (evento.button !== 0) return;
+
+        if (arrastre) {
+            finalizarArrastre();
+            evento.stopImmediatePropagation();
+            return;
+        }
+
+        const inicio = inicioPuntero;
+
+        inicioPuntero = null;
+
+        if (
+            inicio &&
+            Math.hypot(
+                evento.clientX - inicio.x,
+                evento.clientY - inicio.y
+            ) <= 6
+        ) {
+            clic(evento);
+        }
+    },
+    true
+);
+
+canvas.addEventListener(
+    "pointercancel",
+    () => finalizarArrastre(true),
+    true
+);
+
+canvas.addEventListener(
+    "lostpointercapture",
+    () => finalizarArrastre(true),
+    true
+);
+
+async function ejecutar(accion) {
+    if (ocupado) return;
+
+    ocupado = true;
+
+    refrescarControles();
+
+    try {
+        const respuesta = await accion();
+
+        if (!respuesta?.ok) {
+            return aviso(
+                respuesta?.mensaje ||
+                "La acción no se pudo completar."
+            );
+        }
+
+        objetivos = [];
+
+        tableros.mostrarObjetivos([]);
+
+        aplicarEstado(respuesta.estado);
+
+    } catch (error) {
+        console.error(error);
+
+        aviso(
+            "No se pudo completar la acción."
+        );
+
+    } finally {
+        if (!estado?.disparoPendiente) {
+            tableros.mostrarPendiente(null);
+        }
+
+        ocupado = false;
+
+        refrescarControles();
+
+        planificarIA();
+    }
+}
+
+function planificarIA() {
+    if (
+        online ||
+        timerIA ||
+        pausado ||
+        terminado ||
+        motor?.fase !== "en_curso" ||
+        motor.disparoPendiente
+    ) {
+        return;
+    }
+
+    const noCorresponde = rafaga
+        ? !motor.rafagas[1] || motor.rafagas[2]
+        : motor.turno !== 2;
+
+    if (noCorresponde) return;
+
+    timerIA = setTimeout(async () => {
+        try {
+            if (
+                pausado ||
+                destruido ||
+                terminado
+            ) {
+                return;
+            }
+
+            if (rafaga) {
+                const tiros = [];
+
+                while (tiros.length < 10) {
+                    tiros.push({
+                        ...elegirDisparoIA(
+                            tiros,
+                            reglas.tamano
+                        )
+                    });
+                }
+
+                await enviarRafagaConEspera(
+                    motor,
+                    2,
+                    tiros,
+                    { alIniciar: aplicarEstado }
+                );
+
+            } else {
+                const historial =
+                    motor.historial.filter(
+                        tiro => tiro.jugador === 2
+                    );
+
+                const celda = elegirDisparoIA(
+                    historial,
+                    reglas.tamano,
+                    configuracion.dificultad === "dificil"
+                );
+
+                if (celda) {
+                    const respuesta =
+                        await dispararConEspera(
+                            motor,
+                            2,
+                            celda,
+                            { alIniciar: aplicarEstado }
+                        );
+
+                    if (
+                        respuesta.ok &&
+                        motor.fase === "en_curso"
+                    ) {
+                        terminarTurno(motor, 2);
+                    }
+                }
+            }
+
+            if (!destruido) {
+                aplicarEstado(
+                    estadoPublico(motor)
+                );
+            }
+
+        } catch (error) {
+            console.error(error);
+
+            aviso(
+                "No se pudo completar el disparo de la IA."
+            );
+
+        } finally {
+            timerIA = null;
+        }
+    }, 450);
+}
+
+$("selectorBarco").addEventListener(
+    "change",
+    evento => {
+        if (preparando()) {
+            seleccionar(
+                evento.target.value || null
+            );
+        }
+    }
+);
+
+$("btnSeleccionar").onclick = () => {
+    if (!preparando()) return;
+
+    herramienta = "seleccionar";
+
+    refrescarControles();
+};
+
+$("btnMover").onclick = () => {
+    if (!preparando()) return;
+
+    herramienta = "mover";
+
+    mensaje(
+        "Arrastra un barco en TU FLOTA o selecciona " +
+        "uno y pulsa su nueva ubicación. " +
+        "Se conserva la última posición válida."
+    );
+
+    refrescarControles();
+};
+
+$("btnRotar").onclick = girar;
+
+$("btnIniciarPartida").onclick = () => {
+    if (
+        !preparando() ||
+        !hayRival()
+    ) {
+        return;
+    }
+
+    finalizarArrastre();
+
+    void ejecutar(async () => {
+        const validacion = validarFlota(
+            flota,
+            slotLocal,
+            reglas
+        );
+
+        if (!validacion.ok) {
+            return validacion;
+        }
+
+        const respuesta = online
+            ? await red.confirmarFlota(
+                validacion.flota
+            )
+            : registrarFlota(
+                motor,
+                1,
+                validacion.flota
+            );
+
+        if (!respuesta.ok) {
+            return respuesta;
+        }
+
+        seleccionar(null);
+
+        if (!online) {
+            registrarFlota(
+                motor,
+                2,
+                crearFlotaAleatoria(2, reglas)
+            );
+        }
+
+        return online
+            ? respuesta
+            : {
+                ok: true,
+                estado: estadoPublico(motor)
+            };
+    });
+};
+
+$("btnDisparar").onclick = () => {
+    if (!puedeAtacar()) return;
+
+    disparoActivado = !disparoActivado;
+
+    if (!disparoActivado) {
+        tableros.apuntar(null);
+    }
+
+    mensaje(
+        disparoActivado
+            ? rafaga
+                ? "Marca diez casillas enemigas y termina el turno."
+                : "Apunta y haz clic izquierdo sobre una casilla enemiga."
+            : "Disparo desactivado."
+    );
+
+    refrescarControles();
+};
+
+$("btnTerminarTurno").onclick = () => {
+    if (rafaga) {
+        if (
+            !puedeAtacar() ||
+            objetivos.length !== 10
+        ) {
+            return;
+        }
+
+        const celdas = objetivos.map(
+            celda => ({ ...celda })
+        );
+
+        void ejecutar(() =>
+            online
+                ? red.enviarRafaga(celdas)
+                : enviarRafagaConEspera(
+                    motor,
+                    1,
+                    celdas,
+                { alIniciar: aplicarEstado }
+                )
+        );
+
+    } else if (
+        estado?.turno === slotLocal &&
+        estado.restantes === 0 &&
+        !pausado &&
+        hayRival()
+    ) {
+        void ejecutar(() =>
+            online
+                ? red.terminarTurno()
+                : terminarTurno(motor, 1)
+        );
+    }
+};
+
+function pausar() {
+    if (terminado || pausado) return;
+
+    finalizarArrastre();
+
+    pausado = true;
+
+    mundo.controlesCamara.enabled = false;
+
+    ambiente.pausar();
+
+    red?.enviarPausa(true);
+
+    refrescarControles();
+
+    modalPausa.show();
+}
+
+function continuar() {
+    if (terminado) return;
+
+    pausado = false;
+
+    mundo.controlesCamara.enabled = true;
+
+    ambiente.reanudar();
+
+    red?.enviarPausa(false);
+
+    modalPausa.hide();
+
+    refrescarControles();
+
+    planificarIA();
+}
+
+$("btnPausa").onclick = pausar;
+$("btnContinuar").onclick = continuar;
+
+$("btnPantallaCompleta").onclick = () => {
+    window.FleetApp.alternarPantallaCompleta();
+};
+
+function salir() {
+    red?.salirSala();
+    ambiente.detener();
+
+    window.location.href = "dashboard.html";
+}
+
+$("btnVolverDashboard").onclick = salir;
+$("btnResultadoDashboard").onclick = salir;
+
+$("btnVerPuntuaciones").onclick = () => {
+    red?.salirSala();
+
+    window.location.href =
+        "puntuaciones.html?from=dashboard";
+};
+
+$("btnReintentarGuardado").onclick = async () => {
+    const respuesta =
+        await red?.reintentarGuardado();
+
+    if (!respuesta?.ok) {
+        aviso(
+            respuesta?.mensaje ||
+            "No se pudo reintentar."
+        );
+    }
+};
+
+document.addEventListener(
+    "keydown",
+    evento => {
+        if (
+            ["INPUT", "TEXTAREA", "SELECT"].includes(
+                evento.target?.tagName
+            )
+        ) {
+            return;
+        }
+
+        if (evento.key === "Escape") {
+            if (
+                $("modalSala").classList.contains("show") ||
+                terminado
+            ) {
+                return;
+            }
+
+            evento.preventDefault();
+
+            pausado
+                ? continuar()
+                : pausar();
+
+            return;
+        }
+
+        if (
+            !preparando() ||
+            !seleccionado ||
+            arrastre
+        ) {
+            return;
+        }
+
+        const tecla =
+            evento.key.toLowerCase();
+
+        if (tecla === "r") {
+            evento.preventDefault();
+            girar();
+            return;
+        }
+
+        if (herramienta !== "mover") {
+            return;
+        }
+
+        const delta = {
+            w: [0, -1],
+            arrowup: [0, -1],
+
+            s: [0, 1],
+            arrowdown: [0, 1],
+
+            a: [-1, 0],
+            arrowleft: [-1, 0],
+
+            d: [1, 0],
+            arrowright: [1, 0]
+        }[tecla];
+
+        if (!delta) return;
+
+        evento.preventDefault();
+
+        const barco = flota.find(
+            item => item.barcoId === seleccionado
+        );
+
+        colocar(
+            barco.barcoId,
+            barco.columna + delta[0],
+            barco.fila + delta[1],
+            barco.rotacion
+        );
+    },
+    true
+);
+
+function aceptarSala(respuesta) {
+    if (!respuesta?.ok) return;
+
+    const distinta = [
+        "modo",
+        "mapa",
+        "dificultad"
+    ].some(campo =>
+        configuracion[campo] !==
+        respuesta.configuracion[campo]
+    );
+
+    if (distinta) {
+        localStorage.setItem(
+            "fleetCommandConfig",
+            JSON.stringify({
+                ...respuesta.configuracion,
+                rival: "online"
+            })
+        );
+
+        window.location.replace("juego.html");
+        return;
+    }
+
+    const conservar =
+        respuesta.recuperada &&
+        slotLocal === respuesta.slot &&
+        flota.length;
+
+    slotLocal = respuesta.slot;
+
+    flota = respuesta.flotaPropia || (
+        conservar
+            ? flota
+            : crearFlotaAleatoria(
+                slotLocal,
+                reglas
+            )
+    );
+
+    prepararVista();
+
+    mostrarGuardado({
+        estado: respuesta.guardado
+    });
+
+    aplicarEstado(
+        respuesta.estadoJuego
+    );
+
+    $("codigoSala").value =
+        respuesta.codigo;
+
+    $("estadoSala").textContent =
+        `SALA ${respuesta.codigo} / ${conectados}/2`;
+
+    if (conectados === 2) {
         modalSala.hide();
     }
 }
 
-// 17. Crear sala o unirse.
 async function entrarSala(accion) {
-    btnCrearSala.disabled = true;
-    btnUnirseSala.disabled = true;
+    $("btnCrearSala").disabled = true;
+    $("btnUnirseSala").disabled = true;
 
     try {
         const respuesta = accion === "crear"
@@ -553,575 +1413,177 @@ async function entrarSala(accion) {
                 configuracion
             )
             : await red.unirseSala(
-                codigoSala.value,
+                $("codigoSala").value,
                 perfil.nombre
             );
 
-        if (!respuesta?.ok) {
-            estadoLobby.textContent =
-                respuesta?.mensaje ||
-                "No fue posible entrar a la sala.";
-
-            return;
+        if (respuesta.ok) {
+            aceptarSala(respuesta);
+        } else {
+            $("estadoLobby").textContent =
+                respuesta.mensaje;
         }
-
-        if (
-            sincronizarConfiguracion(
-                respuesta.configuracion
-            )
-        ) {
-            return;
-        }
-
-        codigoSala.value = respuesta.codigo;
-
-        prepararFlota(respuesta.slot);
-
-        restaurarFlota(
-            respuesta.flotaPropia
-        );
-
-        actualizarEstadoJuego(
-            respuesta.estadoJuego
-        );
-
-        if (respuesta.guardado !== "pendiente") {
-            actualizarGuardado({
-                estado: respuesta.guardado
-            });
-        }
-
-        estadoSala.textContent =
-            `SALA ${respuesta.codigo}`;
-
-        estadoLobby.textContent =
-            `Conectado como Jugador ${respuesta.slot}.`;
-
-    } catch (error) {
-        console.error(error);
-
-        estadoLobby.textContent =
-            "No se pudo establecer la conexión.";
 
     } finally {
-        btnCrearSala.disabled = false;
-        btnUnirseSala.disabled = false;
+        $("btnCrearSala").disabled = false;
+        $("btnUnirseSala").disabled = false;
     }
 }
 
-// 18. Conectar Socket.IO.
-function iniciarOnline() {
+$("btnCrearSala").onclick = () => {
+    void entrarSala("crear");
+};
+
+$("btnUnirseSala").onclick = () => {
+    void entrarSala("unir");
+};
+
+$("btnSala").onclick = () => {
+    modalSala.show();
+};
+
+$("codigoSala").addEventListener(
+    "input",
+    evento => {
+        evento.target.value =
+            evento.target.value
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, "");
+    }
+);
+
+if (online) {
     red = crearClienteRed({
-        conexion(conectado) {
-            estadoConexion.textContent =
-                conectado
+        conexion(valor) {
+            conectado = valor;
+
+            $("estadoConexion").textContent =
+                valor
                     ? "SERVIDOR CONECTADO"
-                    : "SERVIDOR DESCONECTADO";
+                    : "SIN CONEXIÓN";
+
+            refrescarControles();
         },
 
-        sala: actualizarSala,
+        sala(datos) {
+            conectados =
+                datos.jugadores.length;
 
-        salaPerdida(mensaje) {
-            estadoLobby.textContent = mensaje;
+            $("estadoSala").textContent =
+                `SALA ${datos.codigo} / ${conectados}/2`;
+
+            $("estadoLobby").textContent =
+                datos.jugadores.map(
+                    jugador =>
+                        `J${jugador.slot}: ${jugador.nombre}`
+                ).join(" · ") +
+                (
+                    conectados < 2
+                        ? " · Esperando rival."
+                        : ""
+                );
+
+            aplicarEstado(
+                datos.estadoJuego
+            );
+
+            if (
+                conectados === 2 &&
+                slotLocal
+            ) {
+                modalSala.hide();
+            }
+
+            refrescarControles();
+        },
+
+        salaPerdida(texto) {
+            mensaje(texto);
+
+            slotLocal = null;
+
+            refrescarControles();
+
             modalSala.show();
         },
 
-        reconexionSala(respuesta) {
-            if (
-                sincronizarConfiguracion(
-                    respuesta.configuracion
-                )
-            ) {
-                return;
+        reconexionSala: aceptarSala,
+
+        estadoJuego: aplicarEstado,
+
+        disparo(evento) {
+            if (slotLocal) {
+                tableros.disparo(
+                    evento,
+                    slotLocal
+                );
             }
-
-            if (!slotLocal) {
-                prepararFlota(respuesta.slot);
-            }
-
-            restaurarFlota(
-                respuesta.flotaPropia
-            );
-
-            actualizarEstadoJuego(
-                respuesta.estadoJuego
-            );
-
-            if (respuesta.guardado !== "pendiente") {
-                actualizarGuardado({
-                    estado: respuesta.guardado
-                });
-            }
-
-            estadoLobby.textContent =
-                `Sala ${respuesta.codigo} recuperada.`;
         },
 
-        estadoJuego: actualizarEstadoJuego,
+        terminada: mostrarResultado,
 
-        disparo: dibujarDisparo,
+        guardado: mostrarGuardado,
 
-        terminada: mostrarResultadoOnline,
-
-        guardado: actualizarGuardado,
-
-        pausaRival(rivalPausado) {
-            window.FleetApp.mostrarToast(
-                rivalPausado
+        pausaRival(valor) {
+            aviso(
+                valor
                     ? "El rival pausó sus controles."
                     : "El rival reanudó."
             );
         }
     });
 
-    $("btnSala").hidden = false;
+    $("estadoJugador").textContent =
+        "ONLINE // CREA O ÚNETE A UNA SALA";
 
-    btnFlotaLista.hidden = true;
-
-    estadoJugador.textContent =
-        "MULTIJUGADOR // SIN SALA";
+    refrescarControles();
 
     setTimeout(() => {
-        if (!red.sala) {
+        if (!slotLocal) {
             modalSala.show();
         }
-    }, 220);
-}
+    }, 300);
 
-// 19. Modo IA visual para ampliación posterior.
-function iniciarIAVisual() {
-    estadoConexion.textContent = "MODO LOCAL";
-    estadoSala.textContent = "RIVAL // IA";
+} else {
+    slotLocal = 1;
+
+    motor = crearMotorPartida(
+        configuracion
+    );
+
+    flota = crearFlotaAleatoria(
+        1,
+        reglas
+    );
 
     $("btnSala").hidden = true;
-    btnFlotaLista.hidden = true;
 
-    prepararFlota(1);
-    btnFlotaLista.hidden = true;
+    $("estadoConexion").textContent =
+        "MODO LOCAL";
 
-    flotaIA = crearFlotaProvisional({
-        slot: 2,
-        cantidad: cantidadBarcos,
-        scene: mundo.scene,
-        boardHalf: mundo.boardHalf,
-        cellSize: mundo.cellSize
-    });
+    $("estadoSala").textContent =
+        "RIVAL // IA";
 
-    aplicarModeloFlota(
-        flotaIA,
-        modeloDificil || modeloEstandar
-    );
+    estado = estadoPublico(motor);
 
-    mensajeJuego.textContent =
-        "Visualización contra IA. " +
-        "Su combate se incorporará después.";
+    prepararVista();
+
+    aplicarEstado(estado);
 }
 
-// 20. Mover barcos en la preparación.
-function moverSeleccionado(x, z) {
-    if (
-        !barcoSeleccionado ||
-        pausado ||
-        flotaConfirmada ||
-        (
-            configuracion.rival === "online" &&
-            faseOnline !== "colocando"
-        )
-    ) {
-        return;
-    }
-
-    const valido = moverBarcoSeguro(
-        barcoSeleccionado,
-        { x, z },
-        flotaLocal,
-        mundo.boardHalf
-    );
-
-    if (!valido) {
-        window.FleetApp.mostrarToast(
-            "Esa posición no está disponible."
-        );
-
-        return;
-    }
-
-    mensajeJuego.textContent =
-        "Ubicación actualizada: " +
-        barcoSeleccionado.userData.barcoId;
-}
-
-// 21. Interpretar clics sobre la escena.
-async function pulsarCanvas(evento) {
-    if (pausado || partidaFinalizada) return;
-
-    const rect =
-        mundo.renderer.domElement.getBoundingClientRect();
-
-    puntero.x =
-        ((evento.clientX - rect.left) / rect.width) *
-        2 - 1;
-
-    puntero.y =
-        -((evento.clientY - rect.top) / rect.height) *
-        2 + 1;
-
-    raycaster.setFromCamera(
-        puntero,
-        mundo.camera
-    );
-
-    const tablero =
-        raycaster.intersectObject(
-            mundo.tableroRaycast,
-            false
-        )[0];
-
-    // Combate multijugador.
-    if (
-        configuracion.rival === "online" &&
-        faseOnline === "en_curso"
-    ) {
-        if (
-            !tablero ||
-            disparoPendiente ||
-            !red?.sala
-        ) {
-            return;
-        }
-
-        const celda = puntoACelda(
-            tablero.point
-        );
-
-        disparoPendiente = true;
-
-        try {
-            const respuesta = await red.disparar(
-                celda.columna,
-                celda.fila
-            );
-
-            if (!respuesta?.ok) {
-                window.FleetApp.mostrarToast(
-                    respuesta?.mensaje ||
-                    "Disparo rechazado."
-                );
-            }
-
-        } finally {
-            disparoPendiente = false;
-        }
-
-        return;
-    }
-
-    // Impedir cambios después de confirmar la flota.
-    if (
-        configuracion.rival === "online" &&
-        (
-            flotaConfirmada ||
-            faseOnline !== "colocando"
-        )
-    ) {
-        return;
-    }
-
-    const impacto =
-        raycaster.intersectObjects(
-            flotaLocal,
-            true
-        )[0];
-
-    if (impacto) {
-        seleccionarBarco(
-            encontrarBarcoDesdeObjeto(
-                impacto.object
-            )
-        );
-
-        return;
-    }
-
-    if (!tablero || !barcoSeleccionado) {
-        return;
-    }
-
-    const celda = puntoACelda(
-        tablero.point
-    );
-
-    mundo.marcador.position.set(
-        celda.x,
-        0.08,
-        celda.z
-    );
-
-    mundo.marcador.visible = true;
-
-    moverSeleccionado(
-        celda.x,
-        celda.z
-    );
-}
-
-// 22. Controles de teclado.
-function tecla(evento) {
-    if (evento.key === "Escape") {
-        const salaAbierta =
-            $("modalSala").classList.contains("show");
-
-        if (partidaFinalizada || salaAbierta) {
-            return;
-        }
-
-        evento.preventDefault();
-
-        if (pausado) {
-            continuar();
-        } else {
-            pausar();
-        }
-
-        return;
-    }
-
-    if (
-        pausado ||
-        partidaFinalizada ||
-        flotaConfirmada ||
-        !barcoSeleccionado ||
-        ["INPUT", "TEXTAREA", "SELECT"].includes(
-            evento.target?.tagName
-        )
-    ) {
-        return;
-    }
-
-    const paso = mundo.cellSize;
-
-    let x = barcoSeleccionado.position.x;
-    let z = barcoSeleccionado.position.z;
-
-    switch (evento.key.toLowerCase()) {
-        case "w":
-        case "arrowup":
-            z -= paso;
-            break;
-
-        case "s":
-        case "arrowdown":
-            z += paso;
-            break;
-
-        case "a":
-        case "arrowleft":
-            x -= paso;
-            break;
-
-        case "d":
-        case "arrowright":
-            x += paso;
-            break;
-
-        default:
-            return;
-    }
-
-    evento.preventDefault();
-
-    moverSeleccionado(x, z);
-}
-
-// 23. Diferenciar clic de arrastre de cámara.
-mundo.renderer.domElement.addEventListener(
-    "pointerdown",
-    (evento) => {
-        if (evento.button === 0) {
-            inicioPuntero = {
-                x: evento.clientX,
-                y: evento.clientY
-            };
-        }
-    }
-);
-
-mundo.renderer.domElement.addEventListener(
-    "pointerup",
-    (evento) => {
-        if (
-            evento.button !== 0 ||
-            !inicioPuntero
-        ) {
-            return;
-        }
-
-        const distancia = Math.hypot(
-            evento.clientX - inicioPuntero.x,
-            evento.clientY - inicioPuntero.y
-        );
-
-        inicioPuntero = null;
-
-        if (distancia <= 6) {
-            void pulsarCanvas(evento);
-        }
-    }
-);
-
-document.addEventListener(
-    "keydown",
-    tecla,
-    true
-);
-
-// 24. Pausa.
-function pausar() {
-    if (pausado || partidaFinalizada) return;
-
-    pausado = true;
-    red?.enviarPausa(true);
-
-    modalPausa.show();
-}
-
-function continuar() {
-    if (!pausado || partidaFinalizada) return;
-
-    pausado = false;
-    red?.enviarPausa(false);
-
-    modalPausa.hide();
-}
-
-// 25. Eventos de botones.
-$("btnSala").addEventListener(
-    "click",
-    () => modalSala.show()
-);
-
-btnCrearSala.addEventListener(
-    "click",
-    () => void entrarSala("crear")
-);
-
-btnUnirseSala.addEventListener(
-    "click",
-    () => void entrarSala("unir")
-);
-
-btnFlotaLista.addEventListener(
-    "click",
-    async () => {
-        if (!red?.sala || flotaConfirmada) return;
-
-        btnFlotaLista.disabled = true;
-
-        try {
-            const respuesta = await red.confirmarFlota(
-                serializarFlota(flotaLocal)
-            );
-
-            if (respuesta?.ok) {
-                seleccionarBarco(null);
-
-                actualizarEstadoJuego(
-                    respuesta.estado
-                );
-
-            } else {
-                window.FleetApp.mostrarToast(
-                    respuesta?.mensaje ||
-                    "No se pudo confirmar la flota."
-                );
-            }
-
-        } finally {
-            btnFlotaLista.disabled = false;
-        }
-    }
-);
-
-$("btnPausa").addEventListener(
-    "click",
-    pausar
-);
-
-$("btnContinuar").addEventListener(
-    "click",
-    continuar
-);
-
-$("btnPantallaCompleta").addEventListener(
-    "click",
-    () => window.FleetApp.alternarPantallaCompleta()
-);
-
-$("btnVolverDashboard").addEventListener(
-    "click",
-    () => {
-        red?.salirSala();
-        window.location.href = "dashboard.html";
-    }
-);
-
-btnReintentarGuardado.addEventListener(
-    "click",
-    async () => {
-        const respuesta =
-            await red?.reintentarGuardado();
-
-        if (!respuesta?.ok) {
-            window.FleetApp.mostrarToast(
-                respuesta?.mensaje ||
-                "No se pudo reintentar."
-            );
-        }
-    }
-);
-
-$("btnVerPuntuaciones").addEventListener(
-    "click",
-    () => {
-        window.location.href =
-            "puntuaciones.html?from=dashboard";
-    }
-);
-
-$("btnResultadoDashboard").addEventListener(
-    "click",
-    () => {
-        red?.salirSala();
-        window.location.href = "dashboard.html";
-    }
-);
-
-codigoSala.addEventListener(
-    "input",
-    () => {
-        codigoSala.value =
-            codigoSala.value
-                .toUpperCase()
-                .replace(/[^A-Z0-9]/g, "");
-    }
-);
-
-// 26. Liberar recursos gráficos.
 window.addEventListener(
     "beforeunload",
     () => {
-        for (const marcador of marcadores) {
-            marcador.geometry.dispose();
-            marcador.material.dispose();
-        }
+        destruido = true;
 
+        clearTimeout(timerIA);
+
+        ambiente.dispose();
+
+        mundo.renderer.setAnimationLoop(null);
+
+        vista.dispose();
+        tableros.dispose();
         mundo.dispose();
     }
 );
-
-// 27. Iniciar modo de juego.
-if (configuracion.rival === "online") {
-    iniciarOnline();
-} else {
-    iniciarIAVisual();
-}

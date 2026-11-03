@@ -1,274 +1,310 @@
-
 import * as THREE from "three";
 
-function materialesBarco(color) {
-    const casco = new THREE.MeshPhongMaterial({
-        color,
-        shininess: 55,
-        specular: 0x8afaf1,
-        emissive: 0x001317
-    });
+import {
+    celdasBarco
+} from "./reglasCombate.js";
 
-    const metal = new THREE.MeshPhongMaterial({
-        color: 0xa9c5cb,
-        shininess: 70,
-        specular: 0xffffff,
-        emissive: 0x020809
-    });
+import {
+    clonarModeloBarco
+} from "./modelos.js";
 
-    return { casco, metal };
-}
+export function crearVistaFlota(tablero) {
+    const objetos = new Map();
 
-export function crearBarcoProvisional({
-    id,
-    propietario,
-    color
-}) {
-    const grupo = new THREE.Group();
-    const materiales = materialesBarco(color);
+    let plantilla = null;
+    let seleccionado = null;
+    let datosFlota = [];
 
-    const casco = new THREE.Mesh(
-        new THREE.BoxGeometry(0.9, 0.42, 2.45),
-        materiales.casco
-    );
+    function crearVisual(datos) {
+        const raiz = new THREE.Group();
 
-    grupo.add(casco);
+        raiz.userData.barcoId = datos.barcoId;
 
-    const proa = new THREE.Mesh(
-        new THREE.ConeGeometry(0.48, 0.95, 4),
-        materiales.casco
-    );
+        const longitud =
+            datos.longitud * tablero.celda * 0.94;
 
-    proa.rotation.x = Math.PI / 2;
-    proa.rotation.y = Math.PI / 4;
-    proa.position.z = -1.58;
+        let modelo;
 
-    grupo.add(proa);
+        if (plantilla) {
+            modelo = clonarModeloBarco(plantilla);
 
-    const cabina = new THREE.Mesh(
-        new THREE.BoxGeometry(0.58, 0.34, 0.72),
-        materiales.metal
-    );
+            const caja = new THREE.Box3()
+                .setFromObject(modelo);
 
-    cabina.position.set(0, 0.34, 0.15);
-    grupo.add(cabina);
+            let medidas = caja.getSize(
+                new THREE.Vector3()
+            );
 
-    grupo.userData = {
-        barcoId: id,
-        propietario,
-        seleccionable: true,
-        baseY: 0.22,
-        materiales: [
-            materiales.casco,
-            materiales.metal
-        ]
-    };
+            if (medidas.x > medidas.z) {
+                modelo.rotation.y += Math.PI / 2;
+                modelo.updateMatrixWorld(true);
 
-    grupo.position.y = grupo.userData.baseY;
+                caja.setFromObject(modelo);
 
-    return grupo;
-}
+                medidas = caja.getSize(
+                    new THREE.Vector3()
+                );
+            }
 
-export function crearFlotaProvisional({
-    slot,
-    cantidad,
-    scene,
-    boardHalf,
-    cellSize
-}) {
-    const color =
-        slot === 1 ? 0x00d9cf : 0xff9c38;
+            modelo.scale.multiplyScalar(
+                Math.min(
+                    longitud / medidas.z,
+                    tablero.celda * 0.83 / medidas.x
+                )
+            );
 
-    const flota = [];
+            modelo.updateMatrixWorld(true);
+            caja.setFromObject(modelo);
 
-    const celdas = Math.round(
-        (boardHalf * 2) / cellSize
-    );
+            const centro = caja.getCenter(
+                new THREE.Vector3()
+            );
 
-    const fila =
-        slot === 1 ? celdas - 2 : 1;
+            modelo.position.x -= centro.x;
+            modelo.position.z -= centro.z;
+            modelo.position.y -= caja.min.y;
+        } else {
+            // Respaldo mientras carga el FBX.
+            modelo = new THREE.Group();
 
-    const zBase =
-        -boardHalf + cellSize * (fila + 0.5);
+            const material = new THREE.MeshPhongMaterial({
+                color: 0x63b4c9,
+                shininess: 60
+            });
 
-    const columnaInicial = Math.floor(
-        (celdas - cantidad) / 2
-    );
+            const casco = new THREE.Mesh(
+                new THREE.BoxGeometry(
+                    tablero.celda * 0.62,
+                    tablero.celda * 0.28,
+                    longitud
+                ),
+                material
+            );
 
-    for (let i = 0; i < cantidad; i++) {
-        const barco = crearBarcoProvisional({
-            id: `p${slot}-b${i + 1}`,
-            propietario: slot,
-            color
+            casco.position.y =
+                tablero.celda * 0.14;
+
+            const cabina = new THREE.Mesh(
+                new THREE.BoxGeometry(
+                    tablero.celda * 0.4,
+                    tablero.celda * 0.30,
+                    longitud * 0.35
+                ),
+                new THREE.MeshPhongMaterial({
+                    color: 0xe6f4f3
+                })
+            );
+
+            cabina.position.y =
+                tablero.celda * 0.37;
+
+            modelo.add(casco, cabina);
+        }
+
+        raiz.add(modelo);
+
+        const vertical =
+            datos.rotacion % 180 !== 0;
+
+        raiz.position.set(
+            -tablero.lado / 2 +
+                tablero.celda * (
+                    datos.columna +
+                    (vertical ? 0.5 : datos.longitud / 2)
+                ),
+            0.13,
+            -tablero.lado / 2 +
+                tablero.celda * (
+                    datos.fila +
+                    (vertical ? datos.longitud / 2 : 0.5)
+                )
+        );
+
+        raiz.rotation.y =
+            Math.PI / 2 +
+            THREE.MathUtils.degToRad(
+                datos.rotacion
+            );
+
+        const huella = new THREE.Group();
+        huella.name = "huella";
+
+        for (const celda of celdasBarco(datos)) {
+            const marca = new THREE.Mesh(
+                new THREE.PlaneGeometry(
+                    tablero.celda * 0.88,
+                    tablero.celda * 0.88
+                ),
+                new THREE.MeshBasicMaterial({
+                    color:
+                        seleccionado === datos.barcoId
+                            ? 0xffcd54
+                            : 0x236b7c,
+                    transparent: true,
+                    opacity: 0.5,
+                    fog: false
+                })
+            );
+
+            marca.rotation.x = -Math.PI / 2;
+
+            marca.position.set(
+                -tablero.lado / 2 +
+                    tablero.celda * (
+                        celda.columna + 0.5
+                    ),
+                0.095,
+                -tablero.lado / 2 +
+                    tablero.celda * (
+                        celda.fila + 0.5
+                    )
+            );
+
+            marca.userData.barcoId =
+                datos.barcoId;
+
+            huella.add(marca);
+        }
+
+        tablero.grupo.add(raiz, huella);
+
+        objetos.set(datos.barcoId, {
+            raiz,
+            huella
         });
-
-        barco.position.x =
-            -boardHalf +
-            cellSize * (columnaInicial + i + 0.5);
-
-        barco.position.z = zBase;
-
-        barco.rotation.y =
-            slot === 1 ? 0 : Math.PI;
-
-        scene.add(barco);
-        flota.push(barco);
     }
 
-    return flota;
-}
-
-export function encontrarBarcoDesdeObjeto(objeto) {
-    let actual = objeto;
-
-    while (actual) {
-        if (actual.userData?.barcoId) {
-            return actual;
-        }
-
-        actual = actual.parent;
-    }
-
-    return null;
-}
-
-export function marcarSeleccion(barco, seleccionado) {
-    if (!barco) return;
-
-    barco.userData.materiales?.forEach(material => {
-        if (!material?.emissive) return;
-
-        if (
-            material.userData.fleetEmissiveOriginal ===
-            undefined
+    function limpiar() {
+        for (
+            const { raiz, huella } of
+            objetos.values()
         ) {
-            material.userData.fleetEmissiveOriginal =
-                material.emissive.getHex();
+            raiz.removeFromParent();
+            huella.removeFromParent();
+
+            for (const grupo of [raiz, huella]) {
+                grupo.traverse(objeto => {
+                    if (
+                        !plantilla ||
+                        grupo === huella
+                    ) {
+                        objeto.geometry?.dispose();
+                    }
+
+                    for (
+                        const material of
+                        [].concat(objeto.material || [])
+                    ) {
+                        material.dispose();
+                    }
+                });
+            }
         }
 
-        material.emissive.setHex(
-            seleccionado
-                ? 0x0a605c
-                : material.userData.fleetEmissiveOriginal
-        );
-    });
-}
-
-function cajaEnEstado(
-    barco,
-    x,
-    z,
-    rotY = barco.rotation.y
-) {
-    const posicionAnterior =
-        barco.position.clone();
-
-    const rotacionAnterior =
-        barco.rotation.y;
-
-    barco.position.x = x;
-    barco.position.z = z;
-    barco.rotation.y = rotY;
-
-    barco.updateMatrixWorld(true);
-
-    const caja = new THREE.Box3().setFromObject(barco);
-
-    barco.position.copy(posicionAnterior);
-    barco.rotation.y = rotacionAnterior;
-
-    barco.updateMatrixWorld(true);
-
-    return caja;
-}
-
-function dentroDelTablero(
-    barco,
-    x,
-    z,
-    boardHalf
-) {
-    const caja = cajaEnEstado(barco, x, z);
-    const margen = 0.08;
-
-    return (
-        caja.min.x >= -boardHalf + margen &&
-        caja.max.x <= boardHalf - margen &&
-        caja.min.z >= -boardHalf + margen &&
-        caja.max.z <= boardHalf - margen
-    );
-}
-
-function dentroDelLadoAsignado(barco, x, z) {
-    const caja = cajaEnEstado(barco, x, z);
-    const margenCentro = 0.06;
-
-    if (barco.userData.propietario === 1) {
-        return caja.min.z >= margenCentro;
+        objetos.clear();
     }
 
-    if (barco.userData.propietario === 2) {
-        return caja.max.z <= -margenCentro;
-    }
+    function actualizar(flota) {
+        const mismosBarcos =
+            objetos.size === flota.length &&
+            flota.every(barco =>
+                objetos.has(barco.barcoId) &&
+                datosFlota.find(
+                    dato =>
+                        dato.barcoId === barco.barcoId
+                )?.longitud === barco.longitud
+            );
 
-    return false;
-}
+        if (mismosBarcos) {
+            // Mover no vuelve a clonar todos los modelos.
+            for (const barco of flota) {
+                const { raiz, huella } =
+                    objetos.get(barco.barcoId);
 
-function colisionaConFlota(
-    barco,
-    x,
-    z,
-    flota
-) {
-    const caja = cajaEnEstado(barco, x, z);
+                const vertical =
+                    barco.rotacion % 180 !== 0;
 
-    return flota.some(otro => {
-        if (otro === barco) return false;
+                raiz.position.x =
+                    -tablero.lado / 2 +
+                    tablero.celda * (
+                        barco.columna +
+                        (vertical ? 0.5 : barco.longitud / 2)
+                    );
 
-        const otraCaja = cajaEnEstado(
-            otro,
-            otro.position.x,
-            otro.position.z
+                raiz.position.z =
+                    -tablero.lado / 2 +
+                    tablero.celda * (
+                        barco.fila +
+                        (vertical ? barco.longitud / 2 : 0.5)
+                    );
+
+                raiz.rotation.y =
+                    Math.PI / 2 +
+                    THREE.MathUtils.degToRad(
+                        barco.rotacion
+                    );
+
+                celdasBarco(barco).forEach(
+                    (celda, indice) => {
+                        huella.children[indice].position.x =
+                            -tablero.lado / 2 +
+                            tablero.celda *
+                                (celda.columna + 0.5);
+
+                        huella.children[indice].position.z =
+                            -tablero.lado / 2 +
+                            tablero.celda *
+                                (celda.fila + 0.5);
+                    }
+                );
+            }
+
+            datosFlota = flota.map(
+                barco => ({ ...barco })
+            );
+
+            return;
+        }
+
+        limpiar();
+
+        datosFlota = flota.map(
+            barco => ({ ...barco })
         );
 
-        return caja.intersectsBox(otraCaja);
-    });
-}
-
-export function moverBarcoSeguro(
-    barco,
-    destino,
-    flota,
-    boardHalf
-) {
-    const x = Number(destino.x);
-    const z = Number(destino.z);
-
-    if (
-        !Number.isFinite(x) ||
-        !Number.isFinite(z)
-    ) {
-        return false;
+        datosFlota.forEach(crearVisual);
     }
 
-    const valido =
-        dentroDelTablero(barco, x, z, boardHalf) &&
-        dentroDelLadoAsignado(barco, x, z) &&
-        !colisionaConFlota(barco, x, z, flota);
+    return {
+        actualizar,
 
-    if (!valido) return false;
+        seleccionar(id) {
+            seleccionado = id;
 
-    barco.position.x = x;
-    barco.position.z = z;
+            for (
+                const [barcoId, { huella }] of
+                objetos
+            ) {
+                huella.children.forEach(
+                    objeto => objeto.material.color.setHex(
+                        barcoId === id
+                            ? 0xffcd54
+                            : 0x236b7c
+                    )
+                );
+            }
+        },
 
-    return true;
-}
+        aplicarModelo(modelo) {
+            const anteriores = datosFlota;
 
-export function serializarFlota(flota) {
-    return flota.map(barco => ({
-        barcoId: barco.userData.barcoId,
-        x: barco.position.x,
-        z: barco.position.z,
-        rotY: barco.rotation.y
-    }));
+            limpiar();
+
+            plantilla = modelo;
+
+            actualizar(anteriores);
+        },
+
+        dispose: limpiar
+    };
 }

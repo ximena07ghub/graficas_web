@@ -52,6 +52,7 @@
 
         guardarJSON(CLAVES.ajustes, ajustes);
         aplicarVolumenMusica();
+        document.dispatchEvent(new Event("fleet:ajustes-cambiados"));
         return ajustes;
     }
 
@@ -114,8 +115,7 @@
 
     function iniciarMusica() {
         const pagina = document.body.dataset.page || "otra";
-        if (!["index", "dashboard", "juego"].includes(pagina)) return;
-
+        if (!["index", "dashboard"].includes(pagina)) return;
         const ajustes = obtenerAjustes();
         if (!ajustes.musica) return;
         if (musica && !musica.paused) return;

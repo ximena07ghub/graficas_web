@@ -211,6 +211,19 @@ export function crearClienteRed(callbacks = {}) {
             );
         },
 
+        terminarTurno() {
+            return emitirConRespuesta(
+                "juego:terminarTurno"
+            );
+        },
+
+        enviarRafaga(celdas) {
+            return emitirConRespuesta(
+                "juego:rafaga",
+                { celdas }
+            );
+        },
+
         reintentarGuardado() {
             return emitirConRespuesta(
                 "juego:reintentarGuardado"

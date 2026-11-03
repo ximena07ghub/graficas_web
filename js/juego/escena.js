@@ -1,20 +1,28 @@
 
 import * as THREE from "three";
 
+import { crearDecoracionPlaya } from "./decoracionPlaya.js";
+
+import { crearDecoracionArtico } from "./decoracionArtico.js";
+
+import { crearDecoracionTormenta } from "./decoracionTormenta.js";
+
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
 import {
     OrbitControls
 } from "three/addons/controls/OrbitControls.js";
 
 const AMBIENTES = {
     playa: {
-        fondo: 0x5b91b2,
-        niebla: 0x87b4c8,
-        mar: 0x0a6685,
-        ambiental: 0xbde8ff,
-        direccional: 0xfff0c2,
-        punto: 0x55fff0,
-        intensidadAmbiental: 0.82,
-        intensidadDireccional: 1.5
+        fondo: 0x87ceeb,
+        niebla: 0xc8e8e4,
+        mar: 0x1b9fa6,
+        ambiental: 0xfff1d8,
+        direccional: 0xffd6a0,
+        punto: 0xffe1b0,
+        intensidadAmbiental: 0.75,
+        intensidadDireccional: 1.8
     },
 
     tormenta: {
@@ -24,8 +32,8 @@ const AMBIENTES = {
         ambiental: 0x6f89a8,
         direccional: 0xa8c5e5,
         punto: 0x8c9cff,
-        intensidadAmbiental: 0.45,
-        intensidadDireccional: 1.05
+        intensidadAmbiental: 0.25,
+        intensidadDireccional: 1.0
     },
 
     artico: {
@@ -47,9 +55,132 @@ function crearDecoracion(scene, mapa, mitadTablero) {
     grupo.name = "decoracionEscenario";
 
     if (mapa === "playa") {
+        const cargadorPlaya = new GLTFLoader();
+const rutaModelosPlaya = "/public/models/playa/";
+
+async function agregarModelosPlaya(archivo, posiciones) {
+    try {
+        // Carga el archivo una vez para crear las copias necesarias.
+        const gltf = await cargadorPlaya.loadAsync(
+            rutaModelosPlaya + archivo
+        );
+
+        for (const datos of posiciones) {
+            const modelo = gltf.scene.clone(true);
+
+            const caja = new THREE.Box3().setFromObject(modelo);
+            const medidas = caja.getSize(new THREE.Vector3());
+
+            const dimensionMayor = Math.max(
+                medidas.x,
+                medidas.y,
+                medidas.z
+            );
+
+            if (dimensionMayor <= 0) {
+                throw new Error("El modelo no tiene dimensiones.");
+            }
+
+            // Ajusta el tamaño conservando las proporciones.
+            modelo.scale.multiplyScalar(
+                datos.tamano / dimensionMayor
+            );
+
+            modelo.updateMatrixWorld(true);
+            caja.setFromObject(modelo);
+
+            // Centra el modelo y coloca su base en Y = 0.
+            const centro = caja.getCenter(new THREE.Vector3());
+
+            modelo.position.x -= centro.x;
+            modelo.position.z -= centro.z;
+            modelo.position.y -= caja.min.y;
+
+            // Permite moverlo y girarlo desde el centro de su base.
+            const objeto = new THREE.Group();
+
+            objeto.name = datos.nombre;
+            objeto.add(modelo);
+
+            objeto.position.set(
+                datos.x,
+                datos.y,
+                datos.z
+            );
+
+            objeto.rotation.y = THREE.MathUtils.degToRad(
+                datos.giro
+            );
+
+            grupo.add(objeto);
+        }
+    } catch (error) {
+        console.error(`No se pudo cargar ${archivo}:`, error);
+    }
+}
+
+// COSTA: una sola copia hacia la orilla izquierda.
+void agregarModelosPlaya("beach_in_ballyduff.glb", [
+    {
+        nombre: "costaPlaya",
+        x: -(mitadTablero - 1),
+        y: -0.35,
+        z: -25,
+        tamano: 40,
+        giro: 180
+    }
+]);
+
+// ALETAS: cada fila representa una copia independiente.
+void agregarModelosPlaya("shark_fin.glb", [
+    {
+        nombre: "aleta1",
+        x: -(mitadTablero + 3),
+        y: -0.22,
+        z: 6,
+        tamano: 0.9,
+        giro: 25
+    },
+    {
+        nombre: "aleta2",
+        x: mitadTablero + 3,
+        y: -0.24,
+        z: -5,
+        tamano: 1.05,
+        giro: 115
+    },
+    {
+        nombre: "aleta3",
+        x: -4,
+        y: -0.20,
+        z: -(mitadTablero + 3),
+        tamano: 0.8,
+        giro: 200
+    },
+    {
+        nombre: "aleta4",
+        x: 5,
+        y: -0.25,
+        z: mitadTablero + 4,
+        tamano: 1,
+        giro: 280
+    },
+    {
+        nombre: "aleta5",
+        x: mitadTablero + 7,
+        y: -0.18,
+        z: -(mitadTablero + 7),
+        tamano: 0.95,
+        giro: 335
+    }
+]);
         const arena = new THREE.MeshPhongMaterial({
-            color: 0xb99c5e,
-            shininess: 12
+            color: 0xd9c38a,
+            shininess: 18
+        });
+
+        void crearDecoracionPlaya(grupo, mitadTablero).catch((error) => {
+            console.error("No se pudo cargar la decoración de playa:", error);
         });
 
         [-1, 1].forEach(lado => {
@@ -68,69 +199,48 @@ function crearDecoracion(scene, mapa, mitadTablero) {
 
             grupo.add(isla);
         });
+        new GLTFLoader().load(
+            "/public/models/cielo/skydome_playa.glb",
+            (gltf) => {
+                const cielo = gltf.scene;
+
+                cielo.name = "skydomePlaya";
+                cielo.position.set(0, 0, 0);
+                cielo.scale.setScalar(80);
+                cielo.renderOrder = -1000;
+
+                cielo.traverse((objeto) => {
+                   if (!objeto.isMesh) return;
+
+                    const materiales = Array.isArray(objeto.material)
+                        ? objeto.material
+                        : [objeto.material];
+
+                    materiales.forEach((material) => {
+                        material.fog = false;
+                        material.depthWrite = false;
+                        material.toneMapped = false;
+                    });
+                });
+
+                scene.add(cielo);
+            },
+            undefined,
+            (error) => console.error("Error cargando el cielo:", error)
+        );
     }
 
     if (mapa === "tormenta") {
-        const rocaMaterial =
-            new THREE.MeshPhongMaterial({
-                color: 0x1a3340,
-                shininess: 22
-            });
-
-        for (let i = 0; i < 7; i++) {
-            const roca = new THREE.Mesh(
-                new THREE.DodecahedronGeometry(
-                    0.9 + (i % 3) * 0.35
-                ),
-                rocaMaterial
-            );
-
-            roca.position.set(
-                (i % 2 ? 1 : -1) *
-                    (mitadTablero + 3 + i * 0.45),
-                0.45,
-                -5 + i * 1.6
-            );
-
-            roca.rotation.set(
-                i * 0.3,
-                i * 0.45,
-                0
-            );
-
-            grupo.add(roca);
-        }
+        crearDecoracionTormenta(scene, grupo, mitadTablero);
     }
 
     if (mapa === "artico") {
-        const hielo =
-            new THREE.MeshPhongMaterial({
-                color: 0xe8fbff,
-                shininess: 90
-            });
-
-        for (let i = 0; i < 8; i++) {
-            const placa = new THREE.Mesh(
-                new THREE.CylinderGeometry(
-                    1.2 + (i % 3) * 0.4,
-                    1.5,
-                    0.25,
-                    6
-                ),
-                hielo
+            void crearDecoracionArtico(grupo, mitadTablero).catch((error) => {
+            console.error(
+                "No se pudo crear la decoración del Ártico:",
+                error
             );
-
-            placa.position.set(
-                (i % 2 ? 1 : -1) *
-                    (mitadTablero + 3.5 + (i % 3)),
-                0.1,
-                -7 + i * 2
-            );
-
-            placa.rotation.y = i * 0.6;
-
-            grupo.add(placa);
-        }
+        });
     }
 
     scene.add(grupo);
@@ -216,6 +326,7 @@ export function crearEscena({
         antialias: true,
         powerPreference: "high-performance"
     });
+    renderer.localClippingEnabled = true;
 
     renderer.setPixelRatio(
         Math.min(window.devicePixelRatio, 1.25)
@@ -314,7 +425,7 @@ export function crearEscena({
     // Luz puntual.
     const punto = new THREE.PointLight(
         ambiente.punto,
-        mapa === "tormenta" ? 3.2 : 1.8,
+        mapa === "playa" ? 0.25 : mapa === "tormenta" ? 3.2 : 1.8,
         boardSize * 1.6,
         2
     );
@@ -402,6 +513,7 @@ export function crearEscena({
         renderer,
         mar,
         tableroRaycast,
+        grilla,
         marcador,
         pointLight: punto,
         boardSize,

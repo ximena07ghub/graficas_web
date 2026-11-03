@@ -2,9 +2,8 @@
 (function () {
     "use strict";
 
-    const API_BASE =
-        localStorage.getItem("fleetApiBaseUrl") ||
-        "http://localhost/WebServices";
+    // Node resuelve la ruta local de PHP desde FLEET_PHP_URL en .env.
+    const API_BASE = "/api/php";
 
     async function leerJSON(respuesta) {
         let datos;

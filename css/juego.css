@@ -192,3 +192,92 @@ body[data-page="juego"] {
     font-weight: 800;
     letter-spacing: .08em;
 }
+
+.barra-combate {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.barra-combate select {
+    min-width: 175px;
+    max-width: 230px;
+    padding: 8px;
+    color: #e7fffd;
+    background: #052838;
+    border: 1px solid #4a8f9e;
+    border-radius: 4px;
+}
+
+.acciones-combate {
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+.acciones-combate .btn-fleet {
+    font-size: .72rem;
+    padding: 7px 10px;
+    min-height: 36px;
+}
+
+.barra-combate small {
+    color: #aec9d1;
+    font-size: .7rem;
+}
+
+.btn-fleet:disabled {
+    opacity: .38;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-fleet[aria-pressed="true"] {
+    background: #17675f;
+    border-color: #a5ffde;
+}
+
+.hud-controles {
+    padding-top: 7px;
+    padding-bottom: 7px;
+    font-size: .83rem;
+}
+
+.contenedor-three canvas {
+    touch-action: none;
+}
+
+@media (max-width: 720px) {
+    .barra-combate {
+        gap: 6px;
+        padding: 8px;
+    }
+
+    .barra-combate small {
+        display: none;
+    }
+
+    .acciones-combate {
+        gap: 4px;
+    }
+
+    .acciones-combate .btn-fleet {
+        padding: 5px 7px;
+        font-size: .61rem;
+    }
+
+    .hud-titulo {
+        font-size: .9rem;
+    }
+
+    .hud-identidad {
+        max-width: 55vw;
+    }
+
+    .hud-superior {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+}

@@ -1,0 +1,2 @@
+public/models/artico/le_titanic.glb filter=lfs diff=lfs merge=lfs -text
+public/models/tormenta/lighthouse.glb filter=lfs diff=lfs merge=lfs -text

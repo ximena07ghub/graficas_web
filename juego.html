@@ -125,58 +125,99 @@
             </div>
         </header>
 
-        <section
-            class="hud-inferior container-fluid px-3 px-md-4 pb-3"
-        >
-            <div class="row g-2 align-items-end">
+<section class="hud-inferior container-fluid px-3 px-md-4 pb-3">
+    <div class="row g-2 align-items-end">
 
-                <div class="col-12 col-md-7">
+        <div class="col-12">
+            <div class="hud-panel hud-controles">
+                <p class="mb-1">
+                    <strong id="estadoJugador">
+                        Esperando asignación...
+                    </strong>
+                </p>
 
-                    <div class="hud-panel hud-controles">
-
-                        <p class="mb-1">
-                            <strong id="estadoJugador">
-                                Esperando asignación...
-                            </strong>
-                        </p>
-
-                        <p
-                            class="mb-0 text-hud-suave"
-                            id="mensajeJuego"
-                        >
-                            Coloca tus barcos y confirma
-                            la flota. Después selecciona
-                            casillas del campo rival.
-                        </p>
-
-                    </div>
-                </div>
-
-                <div class="col-12 col-md-5">
-
-                    <div class="hud-panel text-md-end">
-
-                        <span class="control-chip">
-                            MOVER: WASD / FLECHAS
-                        </span>
-
-                        <span class="control-chip">
-                            SELECCIONAR: CLIC
-                        </span>
-
-                        <span class="control-chip">
-                            CÁMARA: ARRASTRAR
-                        </span>
-
-                        <span class="control-chip">
-                            ZOOM: RUEDA DEL MOUSE
-                        </span>
-
-                    </div>
-                </div>
-
+                <p
+                    class="mb-0 text-hud-suave"
+                    id="mensajeJuego"
+                >
+                    Coloca tus barcos e inicia la partida.
+                </p>
             </div>
-        </section>
+        </div>
+
+        <div class="col-12">
+            <div
+                class="hud-panel barra-combate"
+                aria-label="Controles de combate"
+            >
+                <select
+                    id="selectorBarco"
+                    aria-label="Seleccionar barco"
+                ></select>
+
+                <div class="acciones-combate">
+                    <button
+                        class="btn-fleet"
+                        id="btnSeleccionar"
+                        type="button"
+                        aria-pressed="true"
+                    >
+                        SELECCIONAR
+                    </button>
+
+                    <button
+                        class="btn-fleet"
+                        id="btnMover"
+                        type="button"
+                        aria-pressed="false"
+                    >
+                        MOVER
+                    </button>
+
+                    <button
+                        class="btn-fleet"
+                        id="btnRotar"
+                        type="button"
+                    >
+                        GIRAR 90°
+                    </button>
+
+                    <button
+                        class="btn-fleet"
+                        id="btnIniciarPartida"
+                        type="button"
+                    >
+                        INICIAR PARTIDA
+                    </button>
+
+                    <button
+                        class="btn-fleet"
+                        id="btnDisparar"
+                        type="button"
+                    >
+                        DISPARAR
+                    </button>
+
+                    <button
+                        class="btn-fleet"
+                        id="btnTerminarTurno"
+                        type="button"
+                    >
+                        TERMINAR TURNO
+                    </button>
+                </div>
+
+                <small>
+                    Preparación: mover y girar.
+                    Combate: dispara en el tablero enemigo.
+                    Cámara: arrastra fuera de tus barcos;
+                    zoom: rueda.
+                </small>
+            </div>
+        </div>
+
+    </div>
+</section>
 
     </main>
 

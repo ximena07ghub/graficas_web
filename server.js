@@ -5,6 +5,10 @@ import path from "node:path";
 import { randomInt } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
+import {
+    dispararConEspera,
+    enviarRafagaConEspera
+} from "./js/juego/tiemposCombate.js";
 
 import {
     crearMotorPartida,
@@ -12,6 +16,8 @@ import {
     flotaPropia,
     registrarFlota,
     disparar,
+    terminarTurno,
+    enviarRafaga,
     resultadoPartida
 } from "./motorPartida.js";
 
@@ -25,6 +31,8 @@ const PHP_URL = process.env.FLEET_PHP_URL ||
     "http://127.0.0.1/WebServices/guardar_puntaje.php";
 
 const INTERNAL_KEY = process.env.FLEET_INTERNAL_KEY || "";
+
+const PHP_BASE_URL = new URL(".", PHP_URL);
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -68,6 +76,41 @@ app.get("/api/status", (_req, res) => {
         proyecto: "Fleet Command",
         servidor: "Express + Socket.IO"
     });
+});
+
+// Consultas públicas: la ruta de XAMPP se configura solo en este servidor.
+const consultasPHP = new Set([
+    "health.php",
+    "obtener_puntajes.php",
+    "obtener_perfil.php"
+]);
+
+app.get("/api/php/:servicio", async (req, res) => {
+    if (!consultasPHP.has(req.params.servicio)) {
+        return res.status(404).json({
+            ok: false,
+            mensaje: "Servicio de consulta no disponible."
+        });
+    }
+
+    try {
+        const destino = new URL(req.params.servicio, PHP_BASE_URL);
+        destino.search = new URL(req.originalUrl, "http://localhost").search;
+
+        const respuesta = await fetch(destino, {
+            headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(8000)
+        });
+
+        const datos = await respuesta.json();
+        res.status(respuesta.status).json(datos);
+    } catch (error) {
+        console.error("No se pudo consultar PHP:", error.message);
+        res.status(502).json({
+            ok: false,
+            mensaje: "No fue posible consultar el servicio PHP. Revisa Apache y FLEET_PHP_URL."
+        });
+    }
 });
 
 app.get("/", (_req, res) => {
@@ -206,6 +249,7 @@ function cancelarPartidaPorAbandono(sala) {
     if (sala.partida.fase !== "en_curso") return;
 
     sala.partida.fase = "cancelada";
+    sala.partida.disparoPendiente = null;
 
     io.to(sala.codigo).emit(
         "juego:estado",
@@ -235,6 +279,9 @@ function salirDeSala(socket, inmediato = false) {
     if (inmediato) {
         cancelarTemporizador(jugador);
         sala.jugadores.delete(jugador.clienteId);
+        if (sala.partida.fase === "colocando") {
+            sala.partida.flotas[jugador.slot] = null;
+        }
         cancelarPartidaPorAbandono(sala);
     } else {
         jugador.conectado = false;
@@ -246,6 +293,9 @@ function salirDeSala(socket, inmediato = false) {
             if (jugador.conectado) return;
 
             sala.jugadores.delete(jugador.clienteId);
+            if (sala.partida.fase === "colocando") {
+                sala.partida.flotas[jugador.slot] = null;
+            }
             cancelarPartidaPorAbandono(sala);
             publicarSala(sala);
 
@@ -464,7 +514,9 @@ async function persistirResultado(sala) {
                 nombre: participante.nombre,
                 posicion: slot,
                 puntos: resultado.puntuaciones[slot],
-                resultado: resultado.ganador === slot
+                resultado: resultado.empate
+                    ? "empate"
+                    : resultado.ganador === slot
                     ? "victoria"
                     : "derrota"
             };
@@ -531,7 +583,7 @@ io.on("connection", socket => {
         "sala:crear",
         (datos = {}, responder = () => {}) => {
             const configuracion = normalizarConfiguracion(
-                datos.configuracion
+                datos?.configuracion
             );
 
             const codigo = crearCodigoSala();
@@ -551,8 +603,8 @@ io.on("connection", socket => {
             const respuesta = unirJugador(
                 socket,
                 codigo,
-                datos.nombre,
-                datos.clienteId
+                datos?.nombre,
+                datos?.clienteId
             );
 
             if (!respuesta.ok) {
@@ -567,15 +619,15 @@ io.on("connection", socket => {
         "sala:unirse",
         (datos = {}, responder = () => {}) => {
             const codigo = String(
-                datos.codigo || ""
+                datos?.codigo || ""
             ).trim().toUpperCase();
 
             responder(
                 unirJugador(
                     socket,
                     codigo,
-                    datos.nombre,
-                    datos.clienteId
+                    datos?.nombre,
+                    datos?.clienteId
                 )
             );
         }
@@ -618,7 +670,7 @@ io.on("connection", socket => {
             const respuesta = registrarFlota(
                 sala.partida,
                 jugador.slot,
-                datos.flota
+                datos?.flota
             );
             
             // Cuando ambas flotas están listas, comienza el combate.
@@ -650,16 +702,16 @@ io.on("connection", socket => {
         }
     );
 
-    // Disparo validado en el servidor.
+function registrarAccion(evento, accion) {
     socket.on(
-        "juego:disparar",
-        (datos = {}, responder = () => {}) => {
+        evento,
+        async (datos = {}, responder = () => {}) => {
             const contexto = contextoJugador(socket);
 
             if (!contexto) {
                 return responder({
                     ok: false,
-                    mensaje: "Sala no válida."
+                    mensaje: "Sala no valida."
                 });
             }
 
@@ -667,36 +719,83 @@ io.on("connection", socket => {
 
             const conectados = [
                 ...sala.jugadores.values()
-            ].filter(j => j.conectado);
+            ].filter(item => item.conectado);
 
             if (conectados.length !== 2) {
                 return responder({
                     ok: false,
-                    mensaje: "Espera a que el rival se reconecte."
+                    mensaje:
+                        "Espera a que el rival se reconecte."
                 });
             }
 
-            const respuesta = disparar(
-                sala.partida,
-                jugador.slot,
-                datos
-            );
+            let huboEspera = false;
+
+            const alIniciar = estado => {
+                huboEspera = true;
+
+                io.to(sala.codigo).emit(
+                    "juego:estado",
+                    estado
+                );
+            };
+
+            let respuesta;
+
+            try {
+                respuesta = await accion(
+                    sala.partida,
+                    jugador.slot,
+                    datos,
+                    { alIniciar }
+                );
+
+            } catch (error) {
+                console.error(
+                    "No se pudo resolver la accion:",
+                    error
+                );
+
+                io.to(sala.codigo).emit(
+                    "juego:estado",
+                    estadoPublico(sala.partida)
+                );
+
+                return responder({
+                    ok: false,
+                    mensaje:
+                        "No se pudo resolver la accion."
+                });
+            }
 
             responder(respuesta);
 
-            if (!respuesta.ok) return;
+            if (!respuesta.ok) {
+                if (huboEspera) {
+                    io.to(sala.codigo).emit(
+                        "juego:estado",
+                        estadoPublico(sala.partida)
+                    );
+                }
 
-            io.to(sala.codigo).emit(
-                "juego:disparo",
-                respuesta.evento
-            );
+                return;
+            }
+
+            if (respuesta.evento) {
+                io.to(sala.codigo).emit(
+                    "juego:disparo",
+                    respuesta.evento
+                );
+            }
 
             io.to(sala.codigo).emit(
                 "juego:estado",
                 respuesta.estado
             );
 
-            if (sala.partida.fase === "finalizada") {
+            if (
+                sala.partida.fase === "finalizada"
+            ) {
                 io.to(sala.codigo).emit(
                     "juego:terminada",
                     resultadoPartida(sala.partida)
@@ -706,6 +805,35 @@ io.on("connection", socket => {
             }
         }
     );
+}
+
+registrarAccion(
+    "juego:disparar",
+    (partida, slot, datos, opciones) =>
+        dispararConEspera(
+            partida,
+            slot,
+            datos,
+            opciones
+        )
+);
+
+registrarAccion(
+    "juego:terminarTurno",
+    (partida, slot) =>
+        terminarTurno(partida, slot)
+);
+
+registrarAccion(
+    "juego:rafaga",
+    (partida, slot, datos, opciones) =>
+        enviarRafagaConEspera(
+            partida,
+            slot,
+            datos?.celdas,
+            opciones
+        )
+);
 
     socket.on(
         "juego:reintentarGuardado",
