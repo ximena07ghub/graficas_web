@@ -999,8 +999,7 @@ function planificarIA() {
 
                 const celda = elegirDisparoIA(
                     historial,
-                    reglas.tamano,
-                    configuracion.dificultad === "dificil"
+                    reglas.tamano
                 );
 
                 if (celda) {

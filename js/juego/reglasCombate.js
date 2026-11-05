@@ -296,10 +296,12 @@ export function estadoPublico(partida) {
         aciertos: { ...partida.aciertos },
         hundidos: { ...partida.hundidos },
 
-        historial: partida.historial.map(
-            tiro => ({ ...tiro })
-        ),
-
+        historial: partida.historial.map(tiro => ({
+            ...tiro,
+            ...(tiro.celdasHundidas && {
+                celdasHundidas: [...tiro.celdasHundidas]
+            })
+        })),
         ganador: partida.ganador,
         resultado: resultadoPartida(partida)
     };
@@ -386,12 +388,13 @@ function aplicarDisparo(partida, slot, celda) {
     }
 
     const evento = {
-        jugador: slot,
-        defensor,
-        columna: celda.columna,
-        fila: celda.fila,
-        acierto: !!barco,
-        hundido
+    jugador: slot,
+    defensor,
+    columna: celda.columna,
+    fila: celda.fila,
+    acierto: !!barco,
+    hundido,
+    ...(hundido && { celdasHundidas: [...barco.impactos] })
     };
 
     partida.historial.push(evento);
@@ -644,82 +647,88 @@ export function enviarRafaga(partida, slot, celdas) {
     };
 }
 
-// Recibe el historial propio de la IA, no la flota rival.
+// Decide el tiro usando solo los resultados que ya conoce la IA.
 export function elegirDisparoIA(
     historial,
     tamano,
-    dificil = false,
     aleatorio = Math.random
 ) {
     const usados = new Set(
-        historial.map(t =>
-            clave(t.columna, t.fila)
-        )
+        historial.map(tiro => clave(tiro.columna, tiro.fila))
     );
 
-    const disponibles = [];
+    const celdasHundidas = new Set(
+        historial.flatMap(tiro => tiro.celdasHundidas ?? [])
+    );
 
-    for (let fila = 0; fila < tamano; fila++) {
-        for (
-            let columna = 0;
-            columna < tamano;
-            columna++
-        ) {
-            if (!usados.has(clave(columna, fila))) {
-                disponibles.push({ columna, fila });
-            }
-        }
-    }
+    const impactosActivos = historial.filter(tiro =>
+        tiro.acierto &&
+        !tiro.hundido &&
+        !celdasHundidas.has(clave(tiro.columna, tiro.fila))
+    );
 
-    if (!disponibles.length) {
-        return null;
-    }
+    const clavesImpactos = new Set(
+        impactosActivos.map(tiro => clave(tiro.columna, tiro.fila))
+    );
 
-    let candidatos = disponibles;
+    const direcciones = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const prioridades = new Map();
+    let prioridadMaxima = 0;
 
-    if (dificil) {
-        const vecinos = [];
+    for (const impacto of impactosActivos) {
+        for (const [dx, dy] of direcciones) {
+            const celda = {
+                columna: impacto.columna + dx,
+                fila: impacto.fila + dy
+            };
+            const id = clave(celda.columna, celda.fila);
 
-        for (const tiro of [...historial].reverse()) {
-            if (!tiro.acierto || tiro.hundido) {
+            if (!celdaValida(celda, tamano) || usados.has(id)) {
                 continue;
             }
 
-            for (
-                const [dx, dy] of
-                [[1, 0], [-1, 0], [0, 1], [0, -1]]
-            ) {
-                const celda = {
-                    columna: tiro.columna + dx,
-                    fila: tiro.fila + dy
-                };
+            // Cuenta los impactos consecutivos que este tiro prolongaría.
+            let consecutivos = 1;
+            let columna = impacto.columna - dx;
+            let fila = impacto.fila - dy;
 
-                if (
-                    celdaValida(celda, tamano) &&
-                    !usados.has(
-                        clave(celda.columna, celda.fila)
-                    )
-                ) {
-                    vecinos.push(celda);
-                }
+            while (clavesImpactos.has(clave(columna, fila))) {
+                consecutivos++;
+                columna -= dx;
+                fila -= dy;
+            }
+
+            const prioridad = Math.max(
+                consecutivos,
+                prioridades.get(id) ?? 0
+            );
+            prioridades.set(id, prioridad);
+            prioridadMaxima = Math.max(prioridadMaxima, prioridad);
+        }
+    }
+
+    // Si se agotan los objetivos cercanos, busca en todo el tablero.
+    const candidatos = [];
+    for (let fila = 0; fila < tamano; fila++) {
+        for (let columna = 0; columna < tamano; columna++) {
+            const id = clave(columna, fila);
+
+            if (
+                !usados.has(id) &&
+                (prioridades.get(id) ?? 0) === prioridadMaxima
+            ) {
+                candidatos.push({ columna, fila });
             }
         }
+    }
 
-        const paridad = disponibles.filter(
-            c => (c.columna + c.fila) % 2 === 0
-        );
-
-        candidatos = vecinos.length
-            ? vecinos
-            : paridad.length
-                ? paridad
-                : disponibles;
+    if (candidatos.length === 0) {
+        return null;
     }
 
     const indice = Math.min(
         candidatos.length - 1,
         Math.floor(aleatorio() * candidatos.length)
     );
-
     return candidatos[indice];
 }
