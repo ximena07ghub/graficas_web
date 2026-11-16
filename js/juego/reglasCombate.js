@@ -238,6 +238,15 @@ export function crearMotorPartida(configuracion = {}) {
             2: null
         },
 
+        items: configuracion.rival === "ia" && reglas.modo === "clasico"
+            ? {
+                cargas: { sonar: 2, doble: 2, escudo: 2 },
+                turnos: 0,
+                barcoProtegido: null,
+                disparoRealizado: false
+            }
+            : null,
+
         historial: []
     };
 }
@@ -294,6 +303,13 @@ export function estadoPublico(partida) {
         },
 
         aciertos: { ...partida.aciertos },
+        ...(partida.items && {
+            items: {
+                ...partida.items.cargas,
+                disparoRealizado: partida.items.disparoRealizado,
+                escudoActivo: !!partida.items.barcoProtegido
+            }
+        }),
         hundidos: { ...partida.hundidos },
 
         historial: partida.historial.map(tiro => ({
@@ -365,17 +381,21 @@ function aplicarDisparo(partida, slot, celda) {
     const defensor = rivalDe(slot);
     const id = clave(celda.columna, celda.fila);
 
-    partida.disparos[slot].add(id);
-
     const barco = partida.flotas[defensor].find(
         item => celdasBarco(item).some(
             c => clave(c.columna, c.fila) === id
         )
     );
 
+    const bloqueado = Boolean(
+        defensor === 1 && barco &&
+        partida.items?.barcoProtegido === barco.barcoId
+    );
+    if (!bloqueado) partida.disparos[slot].add(id);
+
     let hundido = false;
 
-    if (barco) {
+    if (barco && !bloqueado) {
         barco.impactos.add(id);
         partida.aciertos[slot]++;
 
@@ -388,13 +408,14 @@ function aplicarDisparo(partida, slot, celda) {
     }
 
     const evento = {
-    jugador: slot,
-    defensor,
-    columna: celda.columna,
-    fila: celda.fila,
-    acierto: !!barco,
-    hundido,
-    ...(hundido && { celdasHundidas: [...barco.impactos] })
+        jugador: slot,
+        defensor,
+        columna: celda.columna,
+        fila: celda.fila,
+        acierto: !!barco,
+        ...(bloqueado && { bloqueado: true }),
+        hundido,
+        ...(hundido && { celdasHundidas: [...barco.impactos] })
     };
 
     partida.historial.push(evento);
@@ -480,7 +501,10 @@ export function disparar(partida, slot, celda) {
     );
 
     // El disparo se consume, pero el turno no cambia.
-    partida.restantes = 0;
+    partida.restantes--;
+    if (slot === 1 && partida.items) {
+        partida.items.disparoRealizado = true;
+    }
 
     if (
         partida.hundidos[slot] ===
@@ -528,10 +552,58 @@ export function terminarTurno(partida, slot) {
     partida.turno = rivalDe(slot);
     partida.restantes = 1;
 
+    if (partida.turno === 1 && partida.items) {
+        const items = partida.items;
+        items.barcoProtegido = null;
+        items.disparoRealizado = false;
+        items.turnos++;
+        if (items.turnos % 6 === 0) {
+            for (const tipo of Object.keys(items.cargas)) {
+                items.cargas[tipo] = Math.min(2, items.cargas[tipo] + 1);
+            }
+        }
+    }
+
     return {
         ok: true,
         estado: estadoPublico(partida)
     };
+}
+
+export function usarItem(partida, tipo, datos = {}) {
+    const items = partida.items;
+    if (!items || partida.fase !== "en_curso" || partida.turno !== 1 ||
+        partida.disparoPendiente || items.disparoRealizado || partida.restantes !== 1) {
+        return error("Solo puedes usar ítems al comienzo de tu turno.");
+    }
+
+    if (!Object.hasOwn(items.cargas, tipo) || items.cargas[tipo] === 0) {
+        return error("No quedan cargas de ese ítem.");
+    }
+
+    let revelada = null;
+    if (tipo === "sonar") {
+        if (!celdaValida(datos, partida.tamano)) {
+            return error("Selecciona una casilla válida.");
+        }
+        revelada = partida.flotas[2].flatMap(celdasBarco).find(celda =>
+            Math.abs(celda.columna - datos.columna) <= 1 &&
+            Math.abs(celda.fila - datos.fila) <= 1 &&
+            !partida.disparos[1].has(clave(celda.columna, celda.fila))
+        ) ?? null;
+    } else if (tipo === "doble") {
+        partida.restantes = 2;
+    } else {
+        const barco = partida.flotas[1].find(item => item.barcoId === datos.barcoId);
+        if (!barco || barco.impactos.size === barco.longitud) {
+            return error("Selecciona uno de tus barcos a flote.");
+        }
+        if (items.barcoProtegido) return error("Ya tienes un escudo activo.");
+        items.barcoProtegido = barco.barcoId;
+    }
+
+    items.cargas[tipo]--;
+    return { ok: true, revelada, estado: estadoPublico(partida) };
 }
 
 export function validarRafaga(partida, slot, celdas) {
@@ -654,7 +726,8 @@ export function elegirDisparoIA(
     aleatorio = Math.random
 ) {
     const usados = new Set(
-        historial.map(tiro => clave(tiro.columna, tiro.fila))
+        historial.filter(tiro => !tiro.bloqueado)
+            .map(tiro => clave(tiro.columna, tiro.fila))
     );
 
     const celdasHundidas = new Set(
@@ -663,6 +736,7 @@ export function elegirDisparoIA(
 
     const impactosActivos = historial.filter(tiro =>
         tiro.acierto &&
+        !tiro.bloqueado &&
         !tiro.hundido &&
         !celdasHundidas.has(clave(tiro.columna, tiro.fila))
     );

@@ -4,6 +4,8 @@ import { crearEscena } from "./escena.js";
 import { crearTableros } from "./tableros.js";
 import { crearVistaFlota } from "./barcos.js";
 import { crearAudioAmbiente } from "./audioAmbiente.js";
+import { reproducirEfecto } from "./audioEfectos.js";
+import { crearEfectosCombate, VUELO_RAFAGA_MS } from "./efectosCombate.js";
 
 import {
     obtenerConfiguracion,
@@ -11,6 +13,7 @@ import {
 } from "./configuracion.js";
 
 import {
+    DEMORA_DISPARO_MS,
     dispararConEspera,
     enviarRafagaConEspera
 } from "./tiemposCombate.js";
@@ -29,7 +32,8 @@ import {
     disparar,
     terminarTurno,
     enviarRafaga,
-    elegirDisparoIA
+    elegirDisparoIA,
+    usarItem
 } from "./reglasCombate.js";
 
 const $ = id => document.getElementById(id);
@@ -60,6 +64,8 @@ const tableros = crearTableros(
     mundo,
     reglas.tamano
 );
+
+const efectos = crearEfectosCombate(mundo, tableros);
 
 const vista = crearVistaFlota(
     tableros.propio
@@ -92,6 +98,12 @@ let herramienta = "seleccionar";
 let objetivos = [];
 
 let disparoActivado = false;
+let modoItem = null;
+const botonesItems = {
+    sonar: $("itemSonar"),
+    doble: $("itemDoble"),
+    escudo: $("itemEscudo")
+};
 
 let ocupado = false;
 let pausado = false;
@@ -105,6 +117,7 @@ let arrastre = null;
 let inicioPuntero = null;
 
 let timerIA = null;
+let timerRafagaVisual = null;
 let ultimoRender = 0;
 
 let ultimoGuardado = {
@@ -144,7 +157,6 @@ const puedeAtacar = () =>
               estado.restantes > 0
     );
 
-// Renderizado de la escena, sin animaciones nuevas de combate.
 mundo.renderer.setAnimationLoop(tiempo => {
     if (
         tiempo - ultimoRender <
@@ -154,6 +166,7 @@ mundo.renderer.setAnimationLoop(tiempo => {
     }
 
     ultimoRender = tiempo;
+    efectos.actualizar(tiempo);
 
     mundo.renderer.render(
         mundo.scene,
@@ -187,6 +200,7 @@ function refrescarControles() {
         estado.turno === slotLocal;
 
     if (!puedeAtacar()) {
+        modoItem = null;
         disparoActivado = false;
         tableros.apuntar(null);
     }
@@ -206,6 +220,16 @@ function refrescarControles() {
 
     $("btnIniciarPartida").hidden =
         estado?.fase !== "colocando";
+
+    for (const [tipo, boton] of Object.entries(botonesItems)) {
+        const items = estado?.items;
+        boton.hidden = !items || estado.fase !== "en_curso";
+        boton.disabled = !puedeAtacar() || !items || items.disparoRealizado ||
+            estado.restantes !== 1 || items[tipo] === 0 ||
+            (tipo === "escudo" && items.escudoActivo);
+        boton.textContent = `${tipo.toUpperCase()} (${items?.[tipo] ?? 0})`;
+        if (tipo !== "doble") boton.setAttribute("aria-pressed", modoItem === tipo);
+    }
 
     $("btnDisparar").hidden = false;
 
@@ -252,7 +276,7 @@ function refrescarControles() {
     $("btnFlotaLista").hidden = true;
 
     mundo.renderer.domElement.style.cursor =
-        disparoActivado
+        disparoActivado || modoItem
             ? "crosshair"
             : "default";
 }
@@ -319,13 +343,43 @@ function mostrarResultado(resultado) {
     modalResultado.show();
 }
 
-function aplicarEstado(nuevo) {
-    if (!nuevo || !slotLocal) return;
-
+function aplicarEstado(nuevo, restaurando = false) {
+    if (!nuevo || !slotLocal || destruido) return;
+    const anterior = estado;
     estado = nuevo;
 
+    const pendiente = estado.disparoPendiente;
+    if (pendiente?.tipo === "clasico" && !anterior?.disparoPendiente) {
+        efectos.lanzar(
+            [pendiente], slotLocal, flota, estado.historial,
+            DEMORA_DISPARO_MS, !restaurando
+        );
+    }
+
+    if (estado.fase === "cancelada") efectos.limpiar();
+    if (timerRafagaVisual !== null) return;
+
+    const impactosNuevos = !restaurando && anterior
+        ? estado.historial.slice(anterior.historial.length)
+        : [];
+
+    if (rafaga && impactosNuevos.length) {
+        efectos.lanzar(
+            impactosNuevos, slotLocal, flota, anterior.historial, VUELO_RAFAGA_MS
+        );
+        mensaje("Ráfagas en vuelo...");
+        refrescarControles();
+        timerRafagaVisual = setTimeout(() => {
+            timerRafagaVisual = null;
+            efectos.impactar(impactosNuevos, slotLocal);
+            aplicarEstado(estado);
+        }, VUELO_RAFAGA_MS);
+        return;
+    }
+
+    if (impactosNuevos.length) efectos.impactar(impactosNuevos, slotLocal);
     for (const tiro of estado.historial) {
-        tableros.disparo(tiro, slotLocal);
+        if (!tiro.bloqueado) tableros.disparo(tiro, slotLocal);
     }
 
     const rival = slotLocal === 1 ? 2 : 1;
@@ -396,14 +450,19 @@ if (
                     ? "IMPACTO"
                     : "AGUA";
 
-            mensaje(
-                estado.turno !== slotLocal
-                    ? "TURNO DEL RIVAL"
-                    : estado.restantes
-                        ? "TU TURNO: selecciona una casilla " +
-                          "del tablero enemigo"
-                        : `${impacto}. Pulsa TERMINAR TURNO.`
-            );
+            let texto = "TURNO DEL RIVAL";
+            if (estado.turno === slotLocal) {
+                if (estado.restantes === 0) {
+                    texto = `${impacto}. Pulsa TERMINAR TURNO.`;
+                } else if (estado.items?.disparoRealizado) {
+                    texto = `${impacto}. Te queda un disparo.`;
+                } else if (ultimo?.bloqueado && ultimo.defensor === slotLocal) {
+                    texto = "Tu escudo bloqueó el disparo rival. Es tu turno.";
+                } else {
+                    texto = "TU TURNO: selecciona una casilla del tablero enemigo";
+                }
+            }
+            mensaje(texto);
         }
 
     } else if (estado.fase === "cancelada") {
@@ -570,6 +629,34 @@ function clic(evento) {
         return;
     }
 
+    if (modoItem && puedeAtacar()) {
+        const tipo = modoItem;
+        const tablero = tipo === "sonar" ? tableros.enemigo : tableros.propio;
+        if (celda.tablero !== tablero) {
+            return aviso(tipo === "sonar"
+                ? "Selecciona una casilla del tablero enemigo."
+                : "Selecciona uno de tus barcos.");
+        }
+
+        const datos = tipo === "sonar" ? celda : { barcoId: barcoEn(celda)?.barcoId };
+        const respuesta = usarItem(motor, tipo, datos);
+        if (!respuesta.ok) return aviso(respuesta.mensaje);
+
+        modoItem = null;
+        aplicarEstado(respuesta.estado);
+        if (tipo === "sonar") {
+            const marca = respuesta.revelada;
+            efectos.animarSonar(celda, marca);
+            mensaje(marca
+                ? `Sonar: contacto en ${String.fromCharCode(65 + marca.columna)}${marca.fila + 1}.`
+                : "Sonar: ningún barco detectado en el área 3×3.");
+        } else {
+            efectos.animarEscudo(barcoEn(celda));
+            mensaje("Escudo activado hasta tu próximo turno.");
+        }
+        return;
+    }
+
     if (
         celda.tablero !== tableros.enemigo ||
         !puedeAtacar() ||
@@ -581,6 +668,7 @@ function clic(evento) {
     const repetido = estado.historial.some(
         tiro =>
             tiro.jugador === slotLocal &&
+            !tiro.bloqueado &&
             tiro.columna === celda.columna &&
             tiro.fila === celda.fila
     );
@@ -674,6 +762,7 @@ canvas.addEventListener(
             estado.historial.some(
                 tiro =>
                     tiro.jugador === slotLocal &&
+                    !tiro.bloqueado &&
                     tiro.columna === celda.columna &&
                     tiro.fila === celda.fila
             );
@@ -708,11 +797,14 @@ canvas.addEventListener(
             y: evento.clientY
         };
 
-        // Al apuntar, el clic no comienza un arrastre de camara.
+        // Un clic de combate no comienza un arrastre de cámara.
+        const tableroObjetivo = modoItem === "escudo"
+            ? tableros.propio
+            : tableros.enemigo;
         if (
-            disparoActivado &&
+            (disparoActivado || modoItem) &&
             puedeAtacar() &&
-            localizar(evento)?.tablero === tableros.enemigo
+            localizar(evento)?.tablero === tableroObjetivo
         ) {
             evento.preventDefault();
             evento.stopImmediatePropagation();
@@ -1128,8 +1220,35 @@ $("btnIniciarPartida").onclick = () => {
     });
 };
 
+function apuntarItem(tipo, instruccion) {
+    if (!puedeAtacar() || botonesItems[tipo].disabled) return;
+    modoItem = modoItem === tipo ? null : tipo;
+    disparoActivado = false;
+    tableros.apuntar(null);
+    mensaje(modoItem ? instruccion : "Selección de ítem cancelada.");
+    refrescarControles();
+}
+
+botonesItems.sonar.onclick = () => apuntarItem(
+    "sonar", "Sonar: selecciona el centro de un área 3×3 enemiga."
+);
+botonesItems.escudo.onclick = () => apuntarItem(
+    "escudo", "Escudo: selecciona la casilla de uno de tus barcos."
+);
+botonesItems.doble.onclick = () => {
+    if (!puedeAtacar() || botonesItems.doble.disabled) return;
+    const respuesta = usarItem(motor, "doble");
+    if (!respuesta.ok) return aviso(respuesta.mensaje);
+
+    modoItem = null;
+    aplicarEstado(respuesta.estado);
+    reproducirEfecto("doble");
+    mensaje("Doble activado. Dispara dos veces antes de terminar el turno.");
+};
+
 $("btnDisparar").onclick = () => {
     if (!puedeAtacar()) return;
+    modoItem = null;
 
     disparoActivado = !disparoActivado;
 
@@ -1386,9 +1505,7 @@ function aceptarSala(respuesta) {
         estado: respuesta.guardado
     });
 
-    aplicarEstado(
-        respuesta.estadoJuego
-    );
+    aplicarEstado(respuesta.estadoJuego, true);
 
     $("codigoSala").value =
         respuesta.codigo;
@@ -1498,7 +1615,9 @@ if (online) {
 
         salaPerdida(texto) {
             mensaje(texto);
-
+            clearTimeout(timerRafagaVisual);
+            timerRafagaVisual = null;
+            efectos.limpiar();
             slotLocal = null;
 
             refrescarControles();
@@ -1509,17 +1628,6 @@ if (online) {
         reconexionSala: aceptarSala,
 
         estadoJuego: aplicarEstado,
-
-        disparo(evento) {
-            if (slotLocal) {
-                tableros.disparo(
-                    evento,
-                    slotLocal
-                );
-            }
-        },
-
-        terminada: mostrarResultado,
 
         guardado: mostrarGuardado,
 
@@ -1576,10 +1684,12 @@ window.addEventListener(
         destruido = true;
 
         clearTimeout(timerIA);
+        clearTimeout(timerRafagaVisual);
 
         ambiente.dispose();
 
         mundo.renderer.setAnimationLoop(null);
+        efectos.dispose();
 
         vista.dispose();
         tableros.dispose();
